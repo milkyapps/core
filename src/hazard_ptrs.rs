@@ -1,3 +1,114 @@
+//! Hazard pointers — safe memory reclamation for lock-free data structures.
+//!
+//! # What it is
+//!
+//! Hazard pointers are a technique for *safe memory reclamation* in
+//! concurrent, lock-free data structures. The core idea, introduced by Maged
+//! M. Michael, is described in the seminal paper:
+//!
+//! > Maged M. Michael, *"Hazard Pointers: Safe Memory Reclamation for
+//! > Lock-Free Objects,"* IEEE Transactions on Parallel and Distributed
+//! > Systems, vol. 15, no. 8, pp. 491–504, August 2004.
+//!
+//! The paper motivates the technique as follows:
+//!
+//! > "A new technique for dynamic memory reclamation for concurrent lock-free
+//! > objects is presented. The technique uses hazard pointers, one per thread,
+//! > to indicate to concurrent threads that the referenced objects are
+//! > currently in use and should not be reclaimed."
+//!
+//! In the same paper, the mechanism is summarized succinctly:
+//!
+//! > "A hazard pointer is a pointer to a memory location that a thread is
+//! > currently accessing. ... If a thread's hazard pointer holds the address of
+//! > an object, then no other thread may reclaim that object."
+//!
+//! Concretely, each thread publishes the address of any object it is about to
+//! dereference into a shared *hazard slot* before reading it. A thread that
+//! wants to retire (i.e., unlink and eventually free) an object publishes it
+//! to a *retirement list* and defers its reclamation: the object is only freed
+//! once a scan confirms that no thread's hazard slot still references it. This
+//! guarantees that an object is never freed while a thread holds an
+//! unprotected reference to it — the central safety property of the technique.
+//!
+//! # Why use it
+//!
+//! Lock-free algorithms unlink objects from a structure (e.g. a node removed
+//! from a stack) before they are sure that no other thread is still reading
+//! them. Naïvely freeing the memory immediately is unsound: another thread may
+//! have loaded a pointer to that node and be about to dereference it, leading
+//! to a use-after-free. The alternatives each have drawbacks:
+//!
+//! - **Leaking** the memory (never freeing) is safe but unbounded in size.
+//! - **Reference counting** is hard to make lock-free without strong atomic
+//!   updates and can suffer from the ABA problem.
+//! - **Garbage collection** is not generally available in Rust and introduces
+//!   pauses and runtime cost.
+//!
+//! Hazard pointers solve this with bounded overhead, no GC, and — unlike
+//! epoch-based reclamation (e.g. Crossbeam's `epoch`) — they reclaim memory
+//! *promptly* and do not require global quiescence. Michael's paper notes the
+//! technique's main properties:
+//!
+//! > "The technique has low overhead, does not require special operating
+//! > system or hardware support, and is independent of the number of threads
+//! > and the number of processors."
+//!
+//! In exchange for these properties, hazard pointers pay a per-access cost
+//! (publishing the pointer on each dereference) and limit how many distinct
+//! objects a thread can protect simultaneously per slot.
+//!
+//! This crate implements a small, direct version of the scheme:
+//! - A fixed-size global array of hazard slots ([`HAZARD_ARRAY`]),
+//!   with availability tracked in [`SLOT_AVAILABLE`].
+//! - Per-thread slot ownership recorded in the thread-local [`ID`].
+//! - A lock-free singly-linked retirement list rooted at [`RETIRE_HEAD`].
+//! - RAII protection via [`Guard`] and the [`protect`]/[`unprotect`]/[`retire`]
+//!   functions, plus a [`reclaim`] pass that frees the safe nodes.
+//!
+//! # Example
+//!
+//! A producer thread publishes a pointer into a hazard slot while a consumer
+//! retires it; the memory is reclaimed only once the producer is done:
+//!
+//! ```ignore
+//! use std::sync::Barrier;
+//! use milkyapps_core::hazard_ptrs::{install, protect, unprotect, retire, reclaim};
+//!
+//! std::thread::scope(|scope| {
+//!     // Thread A: read the value while protected.
+//!     scope.spawn(|| {
+//!         install();
+//!         let mut value = Box::new(42u64);
+//!         let ptr = value.as_mut() as *mut u64 as *mut ();
+//!
+//!         let guard = protect(ptr); // publish 'ptr' as a hazard pointer
+//!         // ... dereference 'ptr' here; it is guaranteed not to be freed ...
+//!         unprotect(guard);        // release protection
+//!     });
+//!
+//!     // Thread B: retire the same object (queue it for later reclamation).
+//!     scope.spawn(|| {
+//!         install();
+//!         let mut value = Box::new(42u64);
+//!         let ptr = value.as_mut() as *mut u64 as *mut ();
+//!
+//!         let guard = protect(ptr);
+//!         retire(guard); // pointer is queued, not yet freed
+//!
+//!         // Safe to call periodically: frees only objects that no
+//!         // thread is currently protecting.
+//!         let mut reclaimed = Vec::new();
+//!         reclaim(&mut reclaimed);
+//!     });
+//! });
+//! ```
+//!
+//! Notice that `reclaim` will *not* free `ptr` while Thread A's hazard slot
+//! still references it — only once Thread A calls [`unprotect`] does the object
+//! become eligible for reclamation on a subsequent `reclaim`. That is the
+//! guarantee at the heart of hazard pointers.
+
 use std::{
     cell::Cell,
     mem::MaybeUninit,
