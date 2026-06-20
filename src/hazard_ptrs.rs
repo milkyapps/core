@@ -9,8 +9,12 @@ use std::{
     },
 };
 
-const HAZARD_ARRAY_LEN: usize = 8;
+/// The number of hazard pointers in the array.
+ const HAZARD_ARRAY_LEN: usize = 8;
+
+/// A tracking mechanism for available hazard pointer slots.
 static SLOT_AVAILABLE: LazyLock<[AtomicBool; HAZARD_ARRAY_LEN]> = LazyLock::new(|| {
+
     let mut data: [MaybeUninit<AtomicBool>; HAZARD_ARRAY_LEN] =
         [const { std::mem::MaybeUninit::uninit() }; HAZARD_ARRAY_LEN];
 
@@ -22,6 +26,11 @@ static SLOT_AVAILABLE: LazyLock<[AtomicBool; HAZARD_ARRAY_LEN]> = LazyLock::new(
     // Safe because all elements are now initialized.
     unsafe { std::mem::transmute::<_, [_; HAZARD_ARRAY_LEN]>(data) }
 });
+/// The global array of hazard pointers, indexed by slot.
+///
+/// Each entry holds the pointer currently protected by the thread that owns
+/// that slot, or a null pointer when the slot is free or not actively
+/// protecting anything.
 static HAZARD_ARRAY: LazyLock<[AtomicPtr<()>; HAZARD_ARRAY_LEN]> = LazyLock::new(|| {
     let mut data: [MaybeUninit<AtomicPtr<()>>; HAZARD_ARRAY_LEN] =
         [const { std::mem::MaybeUninit::uninit() }; HAZARD_ARRAY_LEN];
@@ -35,13 +44,28 @@ static HAZARD_ARRAY: LazyLock<[AtomicPtr<()>; HAZARD_ARRAY_LEN]> = LazyLock::new
     unsafe { std::mem::transmute::<_, [_; HAZARD_ARRAY_LEN]>(data) }
 });
 
+/// A node in the singly-linked retirement list.
+///
+/// Retired pointers are queued here until a subsequent [`reclaim`] call
+/// determines they are no longer protected by any hazard pointer and frees them.
 #[derive(Debug)]
 struct RetireNode {
+    /// The retired pointer awaiting reclamation.
     ptr: *mut (),
+    /// Pointer to the next node in the retirement list.
     next: AtomicPtr<RetireNode>,
 }
+
+/// The head of the global singly-linked retirement list.
+///
+/// New retirements are pushed onto the front of this list; [`reclaim`] takes
+/// ownership of the entire list, drops the safe nodes, and reattaches the rest.
 static RETIRE_HEAD: LazyLock<AtomicPtr<RetireNode>> = LazyLock::new(|| AtomicPtr::new(null_mut()));
 
+/// Allocates a [`RetireNode`] for `ptr` and atomically pushes it onto the
+/// front of the retirement list.
+///
+/// Returns a pointer to the newly inserted node.
 fn push_retire_head(ptr: *mut ()) -> *mut RetireNode {
     let new = Box::leak(Box::new(RetireNode {
         ptr,
@@ -57,7 +81,11 @@ fn push_retire_head(ptr: *mut ()) -> *mut RetireNode {
     }
 }
 
-// Not safe. Use only in debug
+/// Not safe. Use only in debug.
+///
+/// Walks the retirement list from `head` and dumps every node with `dbg!`.
+/// This is intended only for ad-hoc debugging: it dereferences raw pointers
+/// without any synchronization guarantees.
 #[allow(unused)]
 fn debug_retire_head(head: &AtomicPtr<RetireNode>) {
     let mut nodes = vec![];
@@ -72,15 +100,32 @@ fn debug_retire_head(head: &AtomicPtr<RetireNode>) {
     dbg!(nodes);
 }
 
+// Per-thread index of the hazard-pointer slot owned by the current thread.
+//
+// Set by `install` when a thread claims a slot, and read by `protect`,
+// `unprotect`, and `retire` to find that thread's slot without passing it
+// around explicitly. (Documented here rather than with a doc comment because
+// rustdoc does not generate documentation for macro invocations.)
 thread_local! {
     static ID: Cell<usize> = const { Cell::new(0) };
 }
 
+/// An RAII guard guarding a pointer that is currently published in a hazard slot.
+///
+/// Dropping a guard without first consuming it via [`unprotect`] or [`retire`]
+/// is a programmer error: in debug builds the [`Drop`] implementation panics
+/// (a "drop bomb") to catch leaked protections early.
 pub struct Guard {
+    /// The protected pointer, or null once the guard has been defused.
     ptr: *mut (),
 }
 
 impl Drop for Guard {
+    /// Asserts that the guard was properly disposed of.
+    ///
+    /// In debug builds this panics if the guard still holds a non-null pointer,
+    /// i.e. it was dropped without a call to [`unprotect`] or [`retire`]. In
+    /// release builds the leak is currently ignored.
     fn drop(&mut self) {
         if cfg!(debug_assertions) {
             if !self.ptr.is_null() {
@@ -93,6 +138,11 @@ impl Drop for Guard {
     }
 }
 
+/// Resets all global hazard-pointer state to its initial, empty configuration.
+///
+/// Marks every slot as available, clears every hazard pointer, and empties the
+/// retirement list. Intended for use between tests; calling this while threads
+/// are actively using the system is unsafe.
 pub fn clear() {
     for i in 0..HAZARD_ARRAY_LEN {
         SLOT_AVAILABLE[i].store(true, Ordering::SeqCst);
@@ -103,6 +153,10 @@ pub fn clear() {
     RETIRE_HEAD.store(null_mut(), Ordering::SeqCst);
 }
 
+/// Claims an available hazard-pointer slot for the current thread.
+///
+/// Scans [`SLOT_AVAILABLE`] for a free slot, atomically reserves it, and records
+/// its index in the thread-local [`ID`]. Panics if all slots are already taken.
 pub fn install() {
     for i in 0..HAZARD_ARRAY_LEN {
         if SLOT_AVAILABLE[i]
@@ -117,6 +171,11 @@ pub fn install() {
     panic!("cannot install")
 }
 
+/// Publishes `ptr` in the hazard slot identified by `id`.
+///
+/// The slot must currently hold a null pointer; attempting to protect a second
+/// pointer in the same slot panics, since each thread may protect only one
+/// pointer at a time.
 pub fn protect_with_id(id: usize, ptr: *mut ()) {
     match HAZARD_ARRAY[id].compare_exchange(null_mut(), ptr, Ordering::AcqRel, Ordering::Relaxed) {
         Ok(_) => {}
@@ -126,12 +185,18 @@ pub fn protect_with_id(id: usize, ptr: *mut ()) {
     }
 }
 
+/// Publishes `ptr` in the current thread's hazard slot and returns a [`Guard`].
+///
+/// Relies on [`install`] having previously claimed a slot for this thread.
 pub fn protect(ptr: *mut ()) -> Guard {
     let id = ID.get();
     protect_with_id(id, ptr);
     Guard { ptr }
 }
 
+/// Clears the hazard slot identified by `id`, releasing protection of `ptr`.
+///
+/// Panics if the slot was not currently protecting exactly `ptr`.
 fn unprotect_with_id(id: usize, ptr: *mut ()) {
     match HAZARD_ARRAY[id].compare_exchange(ptr, null_mut(), Ordering::AcqRel, Ordering::Relaxed) {
         Ok(_) => {}
@@ -141,6 +206,10 @@ fn unprotect_with_id(id: usize, ptr: *mut ()) {
     }
 }
 
+/// Releases protection of the pointer held by `g`, consuming the guard.
+///
+/// Clears the current thread's hazard slot and defuses the guard so its [`Drop`]
+/// does not trigger the drop bomb.
 pub fn unprotect(mut g: Guard) {
     let id = ID.get();
     unprotect_with_id(id, g.ptr);
@@ -149,11 +218,21 @@ pub fn unprotect(mut g: Guard) {
     g.ptr = null_mut();
 }
 
+/// Queues the pointer held by the slot identified by `id` for retirement and
+/// then clears that slot's protection.
+///
+/// After this call the pointer is no longer protected by `id`, but is not yet
+/// reclaimed — it will be freed by a later [`reclaim`] once no slot protects it.
 fn retire_with_id(id: usize, ptr: *mut ()) {
     push_retire_head(ptr);
     unprotect_with_id(id, ptr);
 }
 
+/// Retires the pointer guarded by `g`, consuming the guard.
+///
+/// Pushes the pointer onto the retirement list and clears the current thread's
+/// hazard slot, defusing the guard so its [`Drop`] does not trigger the drop bomb.
+/// The memory is reclaimed lazily by a subsequent [`reclaim`].
 pub fn retire(mut g: Guard) {
     let id = ID.get();
     retire_with_id(id, g.ptr);
