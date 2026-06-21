@@ -110,119 +110,25 @@
 //! guarantee at the heart of hazard pointers.
 
 use std::{
-    cell::Cell,
-    mem::MaybeUninit,
+    cell::UnsafeCell,
     panic,
     ptr::null_mut,
     sync::{
-        LazyLock,
-        atomic::{AtomicBool, AtomicPtr, Ordering},
+        Arc, Weak,
+        atomic::{AtomicPtr, Ordering},
     },
 };
-
-/// The number of hazard pointers in the array.
-const HAZARD_ARRAY_LEN: usize = 8;
-
-/// A tracking mechanism for available hazard pointer slots.
-static SLOT_AVAILABLE: LazyLock<[AtomicBool; HAZARD_ARRAY_LEN]> = LazyLock::new(|| {
-    let mut data: [MaybeUninit<AtomicBool>; HAZARD_ARRAY_LEN] =
-        [const { std::mem::MaybeUninit::uninit() }; HAZARD_ARRAY_LEN];
-
-    for elem in data.iter_mut() {
-        elem.write(AtomicBool::new(true));
-    }
-
-    // 3. Transmute to initialized type
-    // Safe because all elements are now initialized.
-    unsafe { std::mem::transmute::<_, [_; HAZARD_ARRAY_LEN]>(data) }
-});
-/// The global array of hazard pointers, indexed by slot.
-///
-/// Each entry holds the pointer currently protected by the thread that owns
-/// that slot, or a null pointer when the slot is free or not actively
-/// protecting anything.
-static HAZARD_ARRAY: LazyLock<[AtomicPtr<()>; HAZARD_ARRAY_LEN]> = LazyLock::new(|| {
-    let mut data: [MaybeUninit<AtomicPtr<()>>; HAZARD_ARRAY_LEN] =
-        [const { std::mem::MaybeUninit::uninit() }; HAZARD_ARRAY_LEN];
-
-    for elem in data.iter_mut() {
-        elem.write(AtomicPtr::new(std::ptr::null_mut()));
-    }
-
-    // 3. Transmute to initialized type
-    // Safe because all elements are now initialized.
-    unsafe { std::mem::transmute::<_, [_; HAZARD_ARRAY_LEN]>(data) }
-});
 
 /// A node in the singly-linked retirement list.
 ///
 /// Retired pointers are queued here until a subsequent [`reclaim`] call
 /// determines they are no longer protected by any hazard pointer and frees them.
 #[derive(Debug)]
-struct RetireNode {
+struct RetireNode<T> {
     /// The retired pointer awaiting reclamation.
-    ptr: *mut (),
+    ptr: *mut T,
     /// Pointer to the next node in the retirement list.
-    next: AtomicPtr<RetireNode>,
-}
-
-/// The head of the global singly-linked retirement list.
-///
-/// New retirements are pushed onto the front of this list; [`reclaim`] takes
-/// ownership of the entire list, drops the safe nodes, and reattaches the rest.
-static RETIRE_HEAD: LazyLock<AtomicPtr<RetireNode>> = LazyLock::new(|| AtomicPtr::new(null_mut()));
-
-/// Allocates a [`RetireNode`] for `ptr` and atomically pushes it onto the
-/// front of the retirement list.
-///
-/// Returns a pointer to the newly inserted node.
-fn push_retire_head(ptr: *mut ()) -> *mut RetireNode {
-    let new = Box::leak(Box::new(RetireNode {
-        ptr,
-        next: AtomicPtr::new(null_mut()),
-    }));
-    let mut current = RETIRE_HEAD.load(Ordering::Acquire);
-    loop {
-        new.next = AtomicPtr::new(current);
-        match RETIRE_HEAD.compare_exchange_weak(current, new, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => break new,
-            Err(new_head) => current = new_head,
-        }
-    }
-}
-
-/// Use only in debug.
-///
-/// Walks the retirement list from `head` and dumps every node with `dbg!`.
-/// This is intended only for ad-hoc debugging: it dereferences raw pointers
-/// without any synchronization guarantees.
-///
-/// # Safety
-///
-/// Iterate the data structures without any lock. Caller must guarantee nothing is running whilst
-/// this is called.
-#[allow(unused)]
-unsafe fn debug_retire_head(head: &AtomicPtr<RetireNode>) {
-    let mut nodes = vec![];
-
-    let mut current = head.load(Ordering::SeqCst);
-    while !current.is_null() {
-        let node = unsafe { &mut *current };
-        current = node.next.load(Ordering::SeqCst);
-        nodes.push(node);
-    }
-
-    dbg!(nodes);
-}
-
-// Per-thread index of the hazard-pointer slot owned by the current thread.
-//
-// Set by `install` when a thread claims a slot, and read by `protect`,
-// `unprotect`, and `retire` to find that thread's slot without passing it
-// around explicitly. (Documented here rather than with a doc comment because
-// rustdoc does not generate documentation for macro invocations.)
-thread_local! {
-    static ID: Cell<usize> = const { Cell::new(0) };
+    next: AtomicPtr<RetireNode<T>>,
 }
 
 /// An RAII guard guarding a pointer that is currently published in a hazard slot.
@@ -230,25 +136,31 @@ thread_local! {
 /// Dropping a guard without first consuming it via [`unprotect`] or [`retire`]
 /// is a programmer error: in debug builds the [`Drop`] implementation panics
 /// (a "drop bomb") to catch leaked protections early.
-pub struct Guard {
+pub struct Guard<T> {
+    /// Weak pointer to the Registry
+    hp: Weak<UnsafeCell<HazardPointersInner<T>>>,
+    /// Slod id guarded by this guard
+    id: usize,
     /// The protected pointer, or null once the guard has been defused.
-    ptr: *mut (),
+    ptr: *mut T,
 }
 
-impl Drop for Guard {
+impl<T> Drop for Guard<T> {
     /// Asserts that the guard was properly disposed of.
     ///
-    /// In debug builds this panics if the guard still holds a non-null pointer,
-    /// i.e. it was dropped without a call to [`unprotect`] or [`retire`].
+    /// In debug builds this panics if the guard was dropped without a call to [`unprotect`] or [`retire`].
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             // On debug we will panic, but we must unprotect in case
             // the panic is catched
-            unprotect_with_id(ID.get(), self.ptr);
+            if let Some(hp) = self.hp.upgrade() {
+                let inner = unsafe { &mut *hp.get() };
+                inner.unprotect_with_id(self.id, self.ptr);
+            }
 
             if cfg!(debug_assertions) {
                 panic!(
-                    "Hazard Pointer dropped without calling `unprotect` or `retire` (drop_bomb)"
+                    "Hazard Pointer Guard dropped without calling `unprotect` or `retire` (drop_bomb)"
                 );
             } else {
                 // TODO
@@ -258,538 +170,631 @@ impl Drop for Guard {
     }
 }
 
-/// Resets all global hazard-pointer state to its initial, empty configuration.
-///
-/// Marks every slot as available, clears every hazard pointer, and empties the
-/// retirement list. Intended for use between tests; calling this while threads
-/// are actively using the system is unsafe.
-///
-/// # Safety
-///
-/// This method is unsafe because it clears all the data structures without locks.
-/// So the caller must guarantee there is nothing running whilst this is called.
-pub unsafe fn clear() {
-    for i in 0..HAZARD_ARRAY_LEN {
-        SLOT_AVAILABLE[i].store(true, Ordering::SeqCst);
-    }
-    for i in 0..HAZARD_ARRAY_LEN {
-        HAZARD_ARRAY[i].store(null_mut(), Ordering::SeqCst);
-    }
-    RETIRE_HEAD.store(null_mut(), Ordering::SeqCst);
+struct HazardPointersInner<T> {
+    is_slot_available: Vec<bool>,
+    slots: Vec<AtomicPtr<T>>,
+    retire_head: AtomicPtr<RetireNode<T>>,
 }
 
-/// Claims an available hazard-pointer slot for the current thread.
-///
-/// Scans [`SLOT_AVAILABLE`] for a free slot, atomically reserves it, and records
-/// its index in the thread-local [`ID`]. Panics if all slots are already taken.
-pub fn install() {
-    for i in 0..HAZARD_ARRAY_LEN {
-        if SLOT_AVAILABLE[i]
-            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+impl<T> HazardPointersInner<T> {
+    /// Publishes `ptr` in the hazard slot identified by `id`.
+    ///
+    /// The slot must currently hold a null pointer; attempting to protect a second
+    /// pointer in the same slot fails
+    pub fn protect_with_id(&mut self, id: usize, ptr: *mut T) -> Result<(), ()> {
+        debug_assert!(id < self.slots.len());
+        match self.slots[id].compare_exchange(null_mut(), ptr, Ordering::AcqRel, Ordering::Relaxed)
         {
-            ID.set(i);
+            Ok(_) => {
+                self.is_slot_available[id] = false;
+                Ok(())
+            }
+            Err(_) => Err(()),
+        }
+    }
+
+    /// Clears the hazard slot identified by `id`, releasing protection of `ptr`.
+    ///
+    /// Panics if the slot was not currently protecting exactly `ptr`.
+    fn unprotect_with_id(&mut self, id: usize, ptr: *mut T) {
+        debug_assert!(id < self.slots.len());
+
+        match self.slots[id].compare_exchange(ptr, null_mut(), Ordering::AcqRel, Ordering::Relaxed)
+        {
+            Ok(_) => {}
+            Err(_) => {
+                panic!("This pointer was not being protected")
+            }
+        }
+    }
+
+    /// Queues the pointer held by the slot identified by `id` for retirement and
+    /// then clears that slot's protection.
+    ///
+    /// After this call the pointer is no longer protected by `id`, but is not yet
+    /// reclaimed — it will be freed by a later [`reclaim`] once no slot protects it.
+    fn retire_with_id(&mut self, id: usize, ptr: *mut T) {
+        debug_assert!(id < self.slots.len());
+
+        self.push_retire_head(ptr);
+        self.unprotect_with_id(id, ptr);
+    }
+
+    /// Allocates a [`RetireNode`] for `ptr` and atomically pushes it onto the
+    /// front of the retirement list.
+    ///
+    /// Returns a pointer to the newly inserted node.
+    fn push_retire_head(&mut self, ptr: *mut T) -> *mut RetireNode<T> {
+        let new = Box::leak(Box::new(RetireNode {
+            ptr,
+            next: AtomicPtr::new(null_mut()),
+        }));
+        let mut current = self.retire_head.load(Ordering::Acquire);
+        loop {
+            new.next = AtomicPtr::new(current);
+            match self.retire_head.compare_exchange_weak(
+                current,
+                new,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break new,
+                Err(new_head) => current = new_head,
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct HazardPointers<T> {
+    inner: Arc<UnsafeCell<HazardPointersInner<T>>>,
+}
+
+unsafe impl<T> Sync for HazardPointers<T> {}
+unsafe impl<T> Send for HazardPointers<T> {}
+
+impl<T> HazardPointers<T> {
+    pub fn with_capacity(capacity: usize) -> HazardPointers<T> {
+        HazardPointers {
+            inner: Arc::new(UnsafeCell::new(HazardPointersInner {
+                is_slot_available: vec![true; capacity],
+                slots: {
+                    let mut v = Vec::with_capacity(capacity);
+                    for _ in 0..capacity {
+                        v.push(AtomicPtr::new(null_mut()))
+                    }
+                    v
+                },
+                retire_head: AtomicPtr::new(null_mut()),
+            })),
+        }
+    }
+
+    fn find_slot_available(&self) -> Option<usize> {
+        let inner = unsafe { &mut *self.inner.get() };
+        // TODO fail after N tries
+        for _ in 0..16 {
+            let idx = {
+                if cfg!(target_arch = "x86_64") {
+                    todo!()
+                } else if cfg!(target_arch = "aarch64") {
+                    crate::simd::position_of_any_bool(inner.is_slot_available.as_ref(), true)
+                } else {
+                    inner.is_slot_available.iter().position(|&b| b)
+                }
+            };
+
+            if let Some(idx) = idx {
+                return Some(idx);
+            }
+        }
+
+        None
+    }
+
+    /// Use only in debug.
+    ///
+    /// Walks the retirement list from `head` and dumps every node with `dbg!`.
+    /// This is intended only for ad-hoc debugging: it dereferences raw pointers
+    /// without any synchronization guarantees.
+    ///
+    /// # Safety
+    ///
+    /// Iterate the data structures without any lock. Caller must guarantee nothing is running whilst
+    /// this is called.
+    #[allow(unused)]
+    unsafe fn debug_retire_list(&self, head: &AtomicPtr<RetireNode<T>>)
+    where
+        T: std::fmt::Debug,
+    {
+        let mut nodes = vec![];
+
+        let mut current = head.load(Ordering::SeqCst);
+        while !current.is_null() {
+            let node = unsafe { &mut *current };
+            current = node.next.load(Ordering::SeqCst);
+            nodes.push(node);
+        }
+
+        dbg!(nodes);
+    }
+
+    /// Resets all global hazard-pointer state to its initial, empty configuration.
+    ///
+    /// Marks every slot as available, clears every hazard pointer, and empties the
+    /// retirement list. Intended for use between tests; calling this while threads
+    /// are actively using the system is unsafe.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it clears all the data structures without locks.
+    /// So the caller must guarantee there is nothing running whilst this is called.
+    pub unsafe fn clear(&self) {
+        let inner = unsafe { &mut *self.inner.get() };
+
+        for item in inner.is_slot_available.iter_mut() {
+            *item = true;
+        }
+
+        for slot in inner.slots.iter_mut() {
+            slot.store(null_mut(), Ordering::SeqCst);
+        }
+
+        inner.retire_head.store(null_mut(), Ordering::SeqCst);
+    }
+
+    /// Publishes `ptr` in the current thread's hazard slot and returns a [`Guard`].
+    ///
+    /// Relies on [`install`] having previously claimed a slot for this thread.
+    pub fn protect(&self, ptr: *mut T) -> Option<Guard<T>> {
+        let inner = unsafe { &mut *self.inner.get() };
+
+        loop {
+            let id = self.find_slot_available()?;
+            if inner.protect_with_id(id, ptr).is_err() {
+                continue;
+            }
+            return Some(Guard {
+                hp: Arc::downgrade(&self.inner),
+                id,
+                ptr,
+            });
+        }
+    }
+
+    /// Releases protection of the pointer held by `g`, consuming the guard.
+    ///
+    /// Clears the current thread's hazard slot and defuses the guard so its [`Drop`]
+    /// does not trigger the drop bomb.
+    pub fn unprotect(&self, mut g: Guard<T>) {
+        let inner = unsafe { &mut *self.inner.get() };
+        inner.unprotect_with_id(g.id, g.ptr);
+
+        // Defuse drop bomb
+        g.ptr = null_mut();
+    }
+
+    /// Retires the pointer guarded by `g`, consuming the guard.
+    ///
+    /// Pushes the pointer onto the retirement list and clears the current thread's
+    /// hazard slot, defusing the guard so its [`Drop`] does not trigger the drop bomb.
+    /// The memory is reclaimed lazily by a subsequent [`reclaim`].
+    pub fn retire(&self, mut g: Guard<T>) {
+        let inner = unsafe { &mut *self.inner.get() };
+        inner.retire_with_id(g.id, g.ptr);
+
+        // Defuse drop bomb
+        g.ptr = null_mut();
+    }
+
+    pub fn reclaim(&self, v: &mut Vec<*mut T>) {
+        let inner = unsafe { &mut *self.inner.get() };
+
+        // Take control of the whole list
+        let mut current = inner.retire_head.swap(null_mut(), Ordering::Acquire);
+        // We control the whole list now
+
+        // List is empty
+        if current.is_null() {
             return;
         }
-    }
 
-    panic!("cannot install")
-}
+        // check if the current.ptr is inside the hazard array.
+        // If it is, we cannot drop this item as it is still being used
+        // If it isnt, we delete its memory and connect the last node to the next
+        let mut first: *mut RetireNode<T> = current;
+        let mut last: *mut RetireNode<T> = current;
 
-/// Publishes `ptr` in the hazard slot identified by `id`.
-///
-/// The slot must currently hold a null pointer; attempting to protect a second
-/// pointer in the same slot panics, since each thread may protect only one
-/// pointer at a time.
-pub fn protect_with_id(id: usize, ptr: *mut ()) {
-    debug_assert!(id < HAZARD_ARRAY.len());
+        while !current.is_null() {
+            assert!(!first.is_null());
+            assert!(!last.is_null());
 
-    match HAZARD_ARRAY[id].compare_exchange(null_mut(), ptr, Ordering::AcqRel, Ordering::Relaxed) {
-        Ok(_) => {}
-        Err(_) => {
-            panic!("Do not protect more than one pointer")
-        }
-    }
-}
+            // SAFETY: Guaranteed to not be null here
+            // Only we have access to current, so it will live for this whole function
+            let c = unsafe { &mut (*current) };
 
-/// Publishes `ptr` in the current thread's hazard slot and returns a [`Guard`].
-///
-/// Relies on [`install`] having previously claimed a slot for this thread.
-pub fn protect(ptr: *mut ()) -> Guard {
-    let id = ID.get();
-    protect_with_id(id, ptr);
-    Guard { ptr }
-}
+            let ptr = c.ptr;
+            let is_safe_to_delete = inner
+                .slots
+                .iter()
+                .position(|item| ptr == item.load(Ordering::Acquire))
+                .is_none();
 
-/// Clears the hazard slot identified by `id`, releasing protection of `ptr`.
-///
-/// Panics if the slot was not currently protecting exactly `ptr`.
-fn unprotect_with_id(id: usize, ptr: *mut ()) {
-    debug_assert!(id < HAZARD_ARRAY.len());
+            let next = c.next.load(Ordering::Relaxed);
 
-    match HAZARD_ARRAY[id].compare_exchange(ptr, null_mut(), Ordering::AcqRel, Ordering::Relaxed) {
-        Ok(_) => {}
-        Err(_) => {
-            panic!("This pointer was not being protected")
-        }
-    }
-}
+            if is_safe_to_delete {
+                // SAFETY: We allocated using Box::leak(Box::new(...)) above
+                let c = unsafe { Box::from_raw(current) };
+                v.push(c.ptr);
 
-/// Releases protection of the pointer held by `g`, consuming the guard.
-///
-/// Clears the current thread's hazard slot and defuses the guard so its [`Drop`]
-/// does not trigger the drop bomb.
-pub fn unprotect(mut g: Guard) {
-    let id = ID.get();
-    unprotect_with_id(id, g.ptr);
-
-    // Defuse drop bomb
-    g.ptr = null_mut();
-}
-
-/// Queues the pointer held by the slot identified by `id` for retirement and
-/// then clears that slot's protection.
-///
-/// After this call the pointer is no longer protected by `id`, but is not yet
-/// reclaimed — it will be freed by a later [`reclaim`] once no slot protects it.
-fn retire_with_id(id: usize, ptr: *mut ()) {
-    debug_assert!(id < HAZARD_ARRAY.len());
-
-    push_retire_head(ptr);
-    unprotect_with_id(id, ptr);
-}
-
-/// Retires the pointer guarded by `g`, consuming the guard.
-///
-/// Pushes the pointer onto the retirement list and clears the current thread's
-/// hazard slot, defusing the guard so its [`Drop`] does not trigger the drop bomb.
-/// The memory is reclaimed lazily by a subsequent [`reclaim`].
-pub fn retire(mut g: Guard) {
-    let id = ID.get();
-    retire_with_id(id, g.ptr);
-
-    // Defuse drop bomb
-    g.ptr = null_mut();
-}
-
-pub fn reclaim(v: &mut Vec<*mut ()>) {
-    // Take control of the whole list
-    let mut current = RETIRE_HEAD.swap(null_mut(), Ordering::Acquire);
-    // We control the whole list now
-
-    // List is empty
-    if current.is_null() {
-        return;
-    }
-
-    // check if the current.ptr is inside the hazard array.
-    // If it is, we cannot drop this item as it is still being used
-    // If it isnt, we delete its memory and connect the last node to the next
-    let mut first: *mut RetireNode = current;
-    let mut last: *mut RetireNode = current;
-
-    while !current.is_null() {
-        assert!(!first.is_null());
-        assert!(!last.is_null());
-
-        // SAFETY: Guaranteed to not be null here
-        // Only we have access to current, so it will live for this whole function
-        let c = unsafe { &mut (*current) };
-
-        let ptr = c.ptr;
-        let is_safe_to_delete = HAZARD_ARRAY
-            .iter()
-            .position(|item| ptr == item.load(Ordering::Acquire))
-            .is_none();
-
-        let next = c.next.load(Ordering::Relaxed);
-
-        if is_safe_to_delete {
-            // SAFETY: We allocated using Box::leak(Box::new(...)) above
-            let c = unsafe { Box::from_raw(current) };
-            v.push(c.ptr);
-
-            if first == current {
-                first = next;
-                last = next;
-            } else {
-                if !next.is_null() {
-                    // SAFETY: Deref last is safe because it started as current which is not null
-                    unsafe { (*last).next.store(next, Ordering::Relaxed) };
+                if first == current {
+                    first = next;
+                    last = next;
+                } else {
+                    if !next.is_null() {
+                        // SAFETY: Deref last is safe because it started as current which is not null
+                        unsafe { (*last).next.store(next, Ordering::Relaxed) };
+                    }
                 }
+            } else {
+                last = current;
             }
-        } else {
-            last = current;
+
+            current = next;
         }
 
-        current = next;
-    }
-
-    // If last is null, we deleted all nodes
-    if last.is_null() {
-        assert!(first.is_null());
-        return;
-    }
-
-    // prepend the current list to head
-    let mut current = RETIRE_HEAD.load(Ordering::Acquire);
-    loop {
-        unsafe { (*last).next.store(current, Ordering::Relaxed) };
-
-        match RETIRE_HEAD.compare_exchange_weak(current, first, Ordering::AcqRel, Ordering::Acquire)
-        {
-            Ok(_) => break,
-            Err(new_head) => current = new_head,
+        // If last is null, we deleted all nodes
+        if last.is_null() {
+            assert!(first.is_null());
+            return;
         }
+
+        // prepend the current list to head
+        let mut current = inner.retire_head.load(Ordering::Acquire);
+        loop {
+            unsafe { (*last).next.store(current, Ordering::Relaxed) };
+
+            match inner.retire_head.compare_exchange_weak(
+                current,
+                first,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(new_head) => current = new_head,
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn get_slot(&self, id: usize) -> Option<*mut T> {
+        unsafe { &mut *self.inner.get() }
+            .slots
+            .get(id)
+            .map(|x| x.load(Ordering::SeqCst))
+    }
+
+    #[cfg(test)]
+    fn retire_head(&self) -> *mut RetireNode<T> {
+        unsafe { &mut *self.inner.get() }
+            .retire_head
+            .load(Ordering::SeqCst)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Barrier, MutexGuard};
+    use std::sync::{Barrier, atomic::AtomicUsize};
 
-    struct TestContext {
-        guard: Option<MutexGuard<'static, ()>>,
+    #[test]
+    fn protect_unprotect_must_use_slots() {
+        let mut value = Box::new(42u64);
+        let ptr = value.as_mut() as *mut u64;
+
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        assert!(
+            hp.get_slot(0).unwrap().is_null(),
+            "Thread should not be protecting any pointer"
+        );
+        let g = hp.protect(ptr).unwrap();
+        assert_eq!(
+            hp.get_slot(0).unwrap(),
+            ptr,
+            "Thread should be protecting ptr"
+        );
+        hp.unprotect(g);
+        assert!(
+            hp.get_slot(0).unwrap().is_null(),
+            "Thread should not be protecting ptr anymore"
+        );
     }
 
-    macro_rules! fixture {
-        (config; ) => { };
-        (config; setup: fn () $setup_block:block, $($tokens:tt)*) => {
-            fn setup () $setup_block
+    #[test]
+    fn more_protects_than_slots() {
+        let mut value = Box::new(42u64);
+        let ptr = value.as_mut() as *mut u64;
 
-            fixture!{config; $($tokens)*}
-        };
-        (config; serial: true, $($tokens:tt)*) => {
-            static MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-            fixture!{config; $($tokens)*}
-        };
-        (config; serial: false, $($tokens:tt)*) => {
-            fixture!{config; $($tokens)*}
-        };
+        let mut guards = vec![];
+        let hp = HazardPointers::<u64>::with_capacity(8);
+        for _ in 0..9 {
+            guards.push(hp.protect(ptr));
+        }
 
-        // Lock guard if needed
-        (before_each_test; $ctx:ident; ) => { };
-        (before_each_test; $ctx:ident; setup: fn () $setup_block:block, $($tokens:tt)*) => {
-            fixture!{before_each_test; $ctx; $($tokens)*}
-        };
-        (before_each_test; $ctx:ident; serial: true, $($tokens:tt)*) => {
-            $ctx.guard = Some(
-                MUTEX.lock().unwrap_or_else(|e| e.into_inner())
-            );
-            fixture!{before_each_test; $ctx; $($tokens)*}
-        };
-        (before_each_test; $ctx:ident; serial: false, $($tokens:tt)*) => {
-            fixture!{before_each_test; $ctx; $($tokens)*}
-        };
+        let some_qty = guards.iter().filter(|x| x.is_some()).count();
+        let none_qty = guards.iter().filter(|x| x.is_none()).count();
 
-        // Drop guard if needed
-        (after_each_test; ) => { };
-        (after_each_test; setup: fn () $setup_block:block, $($tokens:tt)*) => {
-            fixture!{after_each_test; $($tokens)*}
-        };
-        (after_each_test; serial: true, $($tokens:tt)*) => {
-            fixture!{after_each_test; $($tokens)*}
-        };
-        (after_each_test; serial: false, $($tokens:tt)*) => {
-            fixture!{after_each_test; $($tokens)*}
-        };
+        assert_eq!(some_qty, 8);
+        assert_eq!(none_qty, 1);
 
-        // Main arm
-        ($name:ident; { $($tokens:tt)* }; $(#[test] fn $fn_name:ident() $test_lock:block)*) => {
-            mod $name {
-                use super::*;
+        for g in guards.into_iter().flatten() {
+            hp.unprotect(g);
+        }
+    }
 
-                fixture!{config; $($tokens)*}
+    #[test]
+    fn reclaim_empty() {
+        let hp = HazardPointers::<u64>::with_capacity(8);
 
-                fn before_each_test() -> TestContext {
-                    #[allow(unused_mut)]
-                    let mut ctx = TestContext {
-                        guard: None,
-                    };
-                    fixture!{before_each_test; ctx; $($tokens)*}
-                    ctx
-                }
+        // Should not panic or crash
+        assert!(hp.retire_head().is_null(), "Retire list should be empty");
 
-                fn after_each_test(#[allow(unused)]ctx: TestContext) {
-                    fixture!{after_each_test; $($tokens)*}
-                }
+        let mut v = Vec::new();
+        hp.reclaim(&mut v);
 
-                $(
-                    #[test]
-                    fn $fn_name() {
-                        let __ctx = before_each_test();
-                        setup();
-                        $test_lock
-                        after_each_test(__ctx);
+        assert!(v.is_empty(), "Reclaim Vec should be empty");
+        assert!(hp.retire_head().is_null(), "Retire list should be empty");
+    }
+
+    #[test]
+    fn single_protect_retire_and_reclaim() {
+        let mut value = Box::new(42u64);
+        let ptr = value.as_mut() as *mut u64;
+
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        let g = hp.protect(ptr).unwrap();
+        hp.retire(g);
+
+        let mut v = Vec::with_capacity(16);
+        hp.reclaim(&mut v);
+
+        assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
+        assert_eq!(v[0], ptr, "Reclaimed pointer should be the retired one");
+    }
+
+    #[test]
+    fn protect_prevents_reclaim() {
+        let mut value = Box::new(42u64);
+        let ptr = value.as_mut() as *mut u64;
+
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        // Simulate two threads that are protecting the same ptr
+        let g1 = hp.protect(ptr).unwrap();
+
+        let inner = unsafe { &mut *hp.inner.get() };
+        inner.protect_with_id(1, ptr).unwrap();
+        inner.retire_with_id(1, ptr);
+
+        assert!(
+            !hp.retire_head().is_null(),
+            "Retire List should not be empty"
+        );
+
+        // Because 'ptr' is still in the Hazard Array, it should NOT be reclaimed
+        let mut v = Vec::new();
+        hp.reclaim(&mut v);
+        assert!(
+            v.is_empty(),
+            "ptr should still be protected and not reclaimed"
+        );
+
+        // Now ptr is no long protected and should be reclaimed
+        hp.unprotect(g1);
+        hp.reclaim(&mut v);
+        assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
+        assert_eq!(v[0], ptr, "Reclaimed pointer should be the retired one");
+
+        assert!(hp.retire_head().is_null(), "Retire List should be empty");
+    }
+
+    #[test]
+    fn multiple_retirements() {
+        let ptr1 = Box::leak(Box::new(1u64)) as *mut u64;
+        let ptr2 = Box::leak(Box::new(2u64)) as *mut u64;
+        let ptr3 = Box::leak(Box::new(3u64)) as *mut u64;
+
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        // Simulate three retirements without active protections
+        let inner = unsafe { &mut *hp.inner.get() };
+        inner.push_retire_head(ptr1);
+        inner.push_retire_head(ptr2);
+        inner.push_retire_head(ptr3);
+
+        let mut v = Vec::new();
+        hp.reclaim(&mut v);
+        assert_eq!(v.len(), 3, "All retired pointer should have been reclaimed");
+    }
+
+    #[test]
+    fn partial_reclaim() {
+        let ptr1 = Box::leak(Box::new(1u64)) as *mut u64;
+        let ptr2 = Box::leak(Box::new(2u64)) as *mut u64;
+
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        // Protect p1, leave p2 unprotected
+        // Put both into the retired list
+        let g11 = hp.protect(ptr1).unwrap();
+        let g12 = hp.protect(ptr1).unwrap();
+        hp.retire(g12);
+        let g2 = hp.protect(ptr2).unwrap();
+        hp.retire(g2);
+
+        // Only ptr2 should be reclaimed because ptr1 is still in Hazard Array
+        let mut v = Vec::new();
+        hp.reclaim(&mut v);
+        assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
+        assert_eq!(v[0], ptr2, "Only ptr2 is not protected");
+
+        hp.retire(g11);
+    }
+
+    #[test]
+    fn protect_multi_thread() {
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        let qty_threads = 12;
+        let protect_barrier = Barrier::new(qty_threads + 1);
+        let wait_asserts_barrier = Barrier::new(qty_threads + 1);
+
+        std::thread::scope(|scope| {
+            for _ in 0..qty_threads {
+                scope.spawn(|| {
+                    let p = Box::leak(Box::new(1u64)) as *mut u64;
+                    let g = hp.protect(p);
+
+                    protect_barrier.wait();
+                    wait_asserts_barrier.wait();
+
+                    if let Some(g) = g {
+                        hp.unprotect(g);
                     }
-                )*
+                });
             }
-        };
+
+            protect_barrier.wait();
+
+            for i in 0..qty_threads {
+                if let Some(slot) = hp.get_slot(i) {
+                    assert!(!slot.is_null(), "Thread has protected its pointer");
+                }
+            }
+
+            wait_asserts_barrier.wait();
+        });
+
+        for i in 0..qty_threads {
+            if let Some(slot) = hp.get_slot(i) {
+                assert!(slot.is_null(), "Thread has unprotected its pointer");
+            }
+        }
     }
 
-    fixture! {hazard_serial_tests; {
-        serial: true,
-        setup: fn() {
-            unsafe { clear() };
-            install();
-        },
-    };
-        #[test]
-        fn protect_unprotect_must_add_remove_from_array() {
-            let mut value = Box::new(42u64);
-            let ptr = value.as_mut() as *mut u64 as *mut ();
+    #[test]
+    fn high_contention_protect_and_retire() {
+        let hp = HazardPointers::<u64>::with_capacity(8);
 
-            // Ensure it's actually in the hazard array
-            let id = ID.get();
-            assert!(HAZARD_ARRAY[id].load(Ordering::SeqCst).is_null(), "Thread should not be protecting any pointer");
-            let g = protect(ptr);
-            assert_eq!(HAZARD_ARRAY[id].load(Ordering::SeqCst), ptr, "Thread should be protecting ptr");
-            unprotect(g);
-            assert!(HAZARD_ARRAY[id].load(Ordering::SeqCst).is_null(), "Thread should not be protecting ptr anymore");
-        }
+        let qty_threads = 12;
+        let items_per_thread = 100;
+        let barrier = Barrier::new(qty_threads);
 
-        #[test]
-        fn reclaim_empty() {
-            // Should not panic or crash
-            assert!(RETIRE_HEAD.load(Ordering::SeqCst).is_null(), "Retire list should be empty");
-            let mut v = Vec::new();
-            reclaim(&mut v);
-            assert!(v.is_empty(), "reclaim vec should be empty");
-            assert!(RETIRE_HEAD.load(Ordering::SeqCst).is_null(), "Retire list should be empty");
-        }
+        let retired_qty = AtomicUsize::new(0);
 
-        #[test]
-        fn single_protect_retire_and_reclaim() {
-            let mut value = Box::new(42u64);
-            let ptr = value.as_mut() as *mut u64 as *mut ();
+        std::thread::scope(|scope| {
+            for _ in 0..qty_threads {
+                scope.spawn(|| {
+                    let ptrs = (0..items_per_thread)
+                        .map(|i| Box::leak(Box::new(i as u64)) as *mut u64)
+                        .collect::<Vec<_>>();
 
-            let g = protect(ptr);
-            retire(g);
+                    // Sync start to increase contention
+                    barrier.wait();
 
-            let mut v = Vec::with_capacity(16);
-            reclaim(&mut v);
-
-            assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
-            assert_eq!(v[0], ptr, "Reclaimed pointer should be the retired one");
-        }
-
-        #[test]
-        fn protect_prevents_reclaim() {
-            let mut value = Box::new(42u64);
-            let ptr = value.as_mut() as *mut u64 as *mut ();
-
-            // Simulate two threads that are protecting the same ptr
-            let g1 = protect(ptr);
-
-            protect_with_id(ID.get() + 1, ptr);
-            retire_with_id(ID.get() + 1, ptr);
-
-            assert!(!RETIRE_HEAD.load(Ordering::SeqCst).is_null(), "Retire List should not be empty");
-
-            // Because 'ptr' is still in the Hazard Array, it should NOT be reclaimed
-            let mut v = Vec::new();
-            reclaim(&mut v);
-            assert!(
-                v.is_empty(),
-                "ptr should still be protected and not reclaimed"
-            );
-
-            // Now ptr is no long protected and should be reclaimed
-            unprotect(g1);
-            reclaim(&mut v);
-            assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
-            assert_eq!(v[0], ptr, "Reclaimed pointer should be the retired one");
-
-            assert!(RETIRE_HEAD.load(Ordering::SeqCst).is_null(), "Retire List should be empty");
-        }
-
-        #[test]
-        fn multiple_retirements() {
-            let ptr1 = Box::leak(Box::new(1u64)) as *mut u64 as *mut ();
-            let ptr2 = Box::leak(Box::new(2u64)) as *mut u64 as *mut ();
-            let ptr3 = Box::leak(Box::new(3u64)) as *mut u64 as *mut ();
-
-            // Simulate three retirements without active protections
-            push_retire_head(ptr1);
-            push_retire_head(ptr2);
-            push_retire_head(ptr3);
-
-            let mut v = Vec::new();
-            reclaim(&mut v);
-            assert_eq!(v.len(), 3, "All retired pointer should have been reclaimed");
-        }
-
-        #[test]
-        fn partial_reclaim() {
-            let ptr1 = Box::leak(Box::new(1u64)) as *mut u64 as *mut ();
-            let ptr2 = Box::leak(Box::new(2u64)) as *mut u64 as *mut ();
-
-            // Protect p1, leave p2 unprotected
-            // Put both into the retired list
-            protect_with_id(ID.get(), ptr1);
-            push_retire_head(ptr1);
-            push_retire_head(ptr2);
-
-            // Only ptr2 should be reclaimed because ptr1 is still in Hazard Array
-            let mut v = Vec::new();
-            reclaim(&mut v);
-            assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
-            assert_eq!(v[0], ptr2, "Only ptr2 is not protected");
-        }
-
-        #[test]
-        fn install_exhaustion() {
-            unsafe { clear() };
-            for _ in 0..HAZARD_ARRAY_LEN {
-                install();
-            }
-        }
-
-        #[test]
-        fn protect_multi_thread() {
-            unsafe { clear() };
-            let qty_threads = HAZARD_ARRAY_LEN;
-            let protect_barrier = Barrier::new(qty_threads + 1);
-            let wait_asserts_barrier = Barrier::new(qty_threads + 1);
-
-            std::thread::scope(|scope| {
-                for _ in 0..qty_threads {
-                    scope.spawn(|| {
-                        install();
-                        let p = Box::leak(Box::new(1u64)) as *mut u64 as *mut ();
-                        let g = protect(p);
-
-                        protect_barrier.wait();
-                        wait_asserts_barrier.wait();
-
-                        unprotect(g);
-                    });
-                }
-
-                protect_barrier.wait();
-
-                for i in 0..HAZARD_ARRAY_LEN {
-                    assert!(!HAZARD_ARRAY[i].load(Ordering::SeqCst).is_null(), "Thread has protected its pointer");
-                }
-
-                wait_asserts_barrier.wait();
-            });
-
-            for i in 0..HAZARD_ARRAY_LEN {
-                assert!(HAZARD_ARRAY[i].load(Ordering::SeqCst).is_null(), "Thread has unprotected its pointer");
-            }
-        }
-
-        #[test]
-        fn high_contention_retire() {
-            unsafe { clear() };
-            let qty_threads = HAZARD_ARRAY_LEN;
-            let items_per_thread = 100;
-            let barrier = Barrier::new(qty_threads);
-
-            std::thread::scope(|scope| {
-                for _ in 0..qty_threads {
-                    scope.spawn(|| {
-                        let ptrs = (0..items_per_thread).map(|i| {
-                            Box::leak(Box::new(i as u64)) as *mut u64 as *mut ()
-                        }).collect::<Vec<_>>();
-
-                        // Sync start to increase contention
-                        barrier.wait();
-
-                        install();
-                        for ptr in ptrs {
-                            let g = protect(ptr);
-                            retire(g);
+                    for ptr in ptrs {
+                        if let Some(g) = hp.protect(ptr) {
+                            hp.retire(g);
+                            retired_qty.fetch_add(1, Ordering::Relaxed);
                         }
-                    });
-                }
-            });
-
-            // Final reclamation of everything
-            let mut v = Vec::new();
-            reclaim(&mut v);
-            assert_eq!(v.len(), qty_threads * items_per_thread, "All ptrs were retired and should be reclaimed");
-        }
-
-        #[test]
-        fn mixed_concurrent_access() {
-            // This simulates the real-world hazard pointer use case:
-            // Thread A is reading/protecting a value,
-            // while Thread B is trying to retire it.
-            unsafe { clear() };
-            install();
-
-            let ptr = Box::leak(Box::new(100u64)) as *mut u64;
-            let ptr = ptr as u64;
-
-            // thread 1: g is protected
-            // thread 2: g is protected and retired
-            let barrier1 = Barrier::new(2);
-
-            // thread 1: g is still protected
-            // thread 2: reclaim is called
-            let barrier2 = Barrier::new(2);
-
-            std::thread::scope(|scope| {
-                scope.spawn(|| {
-                    install();
-
-                    let g = protect(ptr as *mut ());
-                    barrier1.wait();
-                    barrier2.wait();
-                    unprotect(g);
+                    }
                 });
-
-                scope.spawn(|| {
-                    install();
-
-                    let g = protect(ptr as *mut ());
-                    retire(g);
-                    barrier1.wait();
-
-                    let mut v = Vec::new();
-                    reclaim(&mut v);
-                    assert!(v.is_empty(), "g is still protected by thread 1");
-
-                    barrier2.wait();
-                });
-            });
-
-            let mut v = Vec::new();
-            reclaim(&mut v);
-            assert_eq!(v.len(), 1, "Now g is reclaimed");
-            assert_eq!(v[0], ptr as *mut (), "Now g is reclaimed");
-        }
-
-        #[test]
-        fn guard_drop() {
-            unsafe { clear() };
-            install();
-
-            let mut value = Box::new(11u64);
-            let ptr = value.as_mut() as *mut u64 as *mut ();
-
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                assert!(HAZARD_ARRAY[ID.get()].load(Ordering::SeqCst).is_null(), "slot should be free");
-                let _g = protect(ptr);
-                assert!(!HAZARD_ARRAY[ID.get()].load(Ordering::SeqCst).is_null(), "ptr is protected");
-            }));
-
-            assert!(HAZARD_ARRAY[ID.get()].load(Ordering::SeqCst).is_null(), "slot should be free now");
-
-            if cfg!(debug_assertions) {
-                assert!(
-                    result.is_err(),
-                    "On Debug, dropping a live guard must trip the drop bomb"
-                );
-            } else {
-                assert!(
-                    result.is_ok(),
-                    "On Release, dropping a live guard does not panic"
-                );
             }
+        });
+
+        // Final reclamation of everything
+        let mut v = Vec::new();
+        hp.reclaim(&mut v);
+        assert_eq!(
+            v.len(),
+            retired_qty.load(Ordering::SeqCst),
+            "All pointers that were retired should be reclaimed"
+        );
+    }
+
+    #[test]
+    fn mixed_concurrent_access() {
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        // This simulates the real-world hazard pointer use case:
+        // Thread A is reading/protecting a value,
+        // while Thread B is trying to retire it.
+
+        let ptr = Box::leak(Box::new(100u64)) as *mut u64;
+        let ptr = ptr as u64;
+
+        // thread 1: g is protected
+        // thread 2: g is protected and retired
+        let barrier1 = Barrier::new(2);
+
+        // thread 1: g is still protected
+        // thread 2: reclaim is called
+        let barrier2 = Barrier::new(2);
+
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let g = hp.protect(ptr as *mut u64).unwrap();
+                barrier1.wait();
+                barrier2.wait();
+                hp.unprotect(g);
+            });
+
+            scope.spawn(|| {
+                let g = hp.protect(ptr as *mut u64).unwrap();
+                hp.retire(g);
+                barrier1.wait();
+
+                let mut v = Vec::new();
+                hp.reclaim(&mut v);
+                assert!(v.is_empty(), "g is still protected by thread 1");
+
+                barrier2.wait();
+            });
+        });
+
+        let mut v = Vec::new();
+        hp.reclaim(&mut v);
+        assert_eq!(v.len(), 1, "Now g is reclaimed");
+        assert_eq!(v[0], ptr as *mut u64, "Now g is reclaimed");
+    }
+
+    #[test]
+    fn guard_drop() {
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        let mut value = Box::new(11u64);
+        let ptr = value.as_mut() as *mut u64;
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            assert!(hp.get_slot(0).unwrap().is_null(), "slot should be free");
+            let _g = hp.protect(ptr);
+            assert!(!hp.get_slot(0).unwrap().is_null(), "ptr is protected");
+        }));
+
+        assert!(hp.get_slot(0).unwrap().is_null(), "slot should be free now");
+
+        if cfg!(debug_assertions) {
+            assert!(
+                result.is_err(),
+                "On Debug, dropping a live guard must trip the drop bomb"
+            );
+        } else {
+            assert!(
+                result.is_ok(),
+                "On Release, dropping a live guard does not panic"
+            );
         }
     }
 }
