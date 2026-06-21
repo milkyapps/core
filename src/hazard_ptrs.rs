@@ -14,7 +14,7 @@
 //!
 //! Lock-free algorithms unlink objects from a structure (e.g. a node removed
 //! from a stack) before they are sure that no other thread is still reading
-//! them. Naïvely freeing the memory immediately is unsound as another thread may
+//! them. Naively freeing the memory immediately is unsound as another thread may
 //! be using the pointed memory, leading to a use-after-free.
 //!
 //! Hazard pointers solves this by "protecting" ([`HazardPointers::protect`])
@@ -25,6 +25,15 @@
 //! For that to happen, the ([`HazardPointers::reclaim`]) function must be actively
 //! called. This function will return all pointers that are safe to be released,
 //! leaving the caller to decide how to do this for each pointer.
+//!
+//! # Cannot protect a retired pointer
+//!
+//! A pointer can ONLY be retired if it is guaranteed that it is no longer reacheable by
+//! any other thread. Which means that [`HazardPointers::protect`] should not be called
+//! after [`HazardPointers::retire`].
+//!
+//! The breaking of this invariant means that a call to [`HazardPointers::reclaim`] will
+//! return a pointer that can potentially be protected after being returned.
 //!
 //! # Example
 //!
@@ -86,7 +95,7 @@ pub struct Guard<T> {
 impl<T> Drop for Guard<T> {
     /// Asserts that the guard was properly disposed of.
     ///
-    /// In debug builds this panics if the guard was dropped without a call to [`unprotect`] or [`retire`].
+    /// In debug builds this panics if the guard was dropped without a call to [`HazardPointers::unprotect`] or [`HazardPointers::retire`].
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             // On debug we will panic, but we must unprotect first in case
@@ -307,6 +316,10 @@ impl<T> HazardPointers<T> {
     }
 
     /// Consume [`Guard`] retiring its pointer.
+    ///
+    /// A pointer can ONLY be retired if it is guaranteed that it is no longer reacheable by
+    /// any other thread. Which means that [`HazardPointers::protect`] should not be called
+    /// after [`HazardPointers::retire`].
     pub fn retire(&self, mut g: Guard<T>) {
         let inner = unsafe { &mut *self.inner.get() };
         inner.retire_with_id(g.id, g.ptr);
@@ -317,7 +330,10 @@ impl<T> HazardPointers<T> {
 
     /// Push into `v` all retired pointer which is not being protected.
     /// Caller must decide what to do with the returned pointers.
-    pub fn reclaim(&self, v: &mut Vec<*mut T>) {
+    ///
+    /// `v` will be sorted and deduped, so ideally it should be empty.
+    /// To avoid allocations, one can also resuse the same `Vec` multiple times.
+    pub fn reclaim(&self, reclaimed: &mut Vec<*mut T>) {
         let inner = unsafe { &mut *self.inner.get() };
 
         // Take control of the whole list
@@ -355,7 +371,7 @@ impl<T> HazardPointers<T> {
             if is_safe_to_delete {
                 // SAFETY: We allocated using Box::leak(Box::new(...)) above
                 let c = unsafe { Box::from_raw(current) };
-                v.push(c.ptr);
+                reclaimed.push(c.ptr);
 
                 if first == current {
                     first = next;
@@ -376,24 +392,26 @@ impl<T> HazardPointers<T> {
         // If last is null, we deleted all nodes
         if last.is_null() {
             assert!(first.is_null());
-            return;
-        }
+        } else {
+            // prepend the current list to head
+            let mut current = inner.retire_head.load(Ordering::Acquire);
+            loop {
+                unsafe { (*last).next.store(current, Ordering::Relaxed) };
 
-        // prepend the current list to head
-        let mut current = inner.retire_head.load(Ordering::Acquire);
-        loop {
-            unsafe { (*last).next.store(current, Ordering::Relaxed) };
-
-            match inner.retire_head.compare_exchange_weak(
-                current,
-                first,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => break,
-                Err(new_head) => current = new_head,
+                match inner.retire_head.compare_exchange_weak(
+                    current,
+                    first,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => break,
+                    Err(new_head) => current = new_head,
+                }
             }
         }
+
+        reclaimed.sort();
+        reclaimed.dedup();
     }
 
     #[cfg(test)]
@@ -710,12 +728,12 @@ mod tests {
         let g = hp.protect(ptr).unwrap();
         let id = g.id;
         assert!(
-            unsafe { &mut *hp.inner.get() }.is_slot_available[id] == false,
+            !unsafe { &mut *hp.inner.get() }.is_slot_available[id],
             "is_slot_available must be false after protect"
         );
         hp.unprotect(g);
         assert!(
-            unsafe { &mut *hp.inner.get() }.is_slot_available[id] == true,
+            unsafe { &mut *hp.inner.get() }.is_slot_available[id],
             "is_slot_available must be true after unprotect"
         );
     }
@@ -759,5 +777,24 @@ mod tests {
                 "On Release, dropping a live guard does not panic"
             );
         }
+    }
+
+    #[test]
+    fn double_retire() {
+        let hp = HazardPointers::<u64>::with_capacity(8);
+
+        let mut value = Box::new(11u64);
+        let ptr = value.as_mut() as *mut u64;
+
+        let g1 = hp.protect(ptr).unwrap();
+        hp.retire(g1);
+        let g2 = hp.protect(ptr).unwrap();
+        hp.retire(g2);
+
+        let mut v = vec![];
+        hp.reclaim(&mut v);
+
+        dbg!(&v);
+        assert!(v.len() == 1, "Pointer should be returned only once");
     }
 }
