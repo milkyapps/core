@@ -2,7 +2,7 @@
 //!
 //! # What it is
 //!
-//! Hazard pointers are a technique for *safe memory reclamation* in
+//! Hazard pointers is a technique for *safe memory reclamation* in
 //! concurrent, lock-free data structures. The core idea, introduced by Maged
 //! M. Michael, is described in the seminal paper:
 //!
@@ -10,104 +10,44 @@
 //! > Lock-Free Objects,"* IEEE Transactions on Parallel and Distributed
 //! > Systems, vol. 15, no. 8, pp. 491–504, August 2004.
 //!
-//! The paper motivates the technique as follows:
-//!
-//! > "A new technique for dynamic memory reclamation for concurrent lock-free
-//! > objects is presented. The technique uses hazard pointers, one per thread,
-//! > to indicate to concurrent threads that the referenced objects are
-//! > currently in use and should not be reclaimed."
-//!
-//! In the same paper, the mechanism is summarized succinctly:
-//!
-//! > "A hazard pointer is a pointer to a memory location that a thread is
-//! > currently accessing. ... If a thread's hazard pointer holds the address of
-//! > an object, then no other thread may reclaim that object."
-//!
-//! Concretely, each thread publishes the address of any object it is about to
-//! dereference into a shared *hazard slot* before reading it. A thread that
-//! wants to retire (i.e., unlink and eventually free) an object publishes it
-//! to a *retirement list* and defers its reclamation: the object is only freed
-//! once a scan confirms that no thread's hazard slot still references it. This
-//! guarantees that an object is never freed while a thread holds an
-//! unprotected reference to it — the central safety property of the technique.
-//!
-//! # Why use it
+//! # Rationale
 //!
 //! Lock-free algorithms unlink objects from a structure (e.g. a node removed
 //! from a stack) before they are sure that no other thread is still reading
-//! them. Naïvely freeing the memory immediately is unsound: another thread may
-//! have loaded a pointer to that node and be about to dereference it, leading
-//! to a use-after-free. The alternatives each have drawbacks:
+//! them. Naïvely freeing the memory immediately is unsound as another thread may
+//! be using the pointed memory, leading to a use-after-free.
 //!
-//! - **Leaking** the memory (never freeing) is safe but unbounded in size.
-//! - **Reference counting** is hard to make lock-free without strong atomic
-//!   updates and can suffer from the ABA problem.
-//! - **Garbage collection** is not generally available in Rust and introduces
-//!   pauses and runtime cost.
+//! Hazard pointers solves this by "protecting" ([`HazardPointers::protect`])
+//! and "retiring" ([`HazardPointers::retire`]) pointers, instead
+//! of immediately releasing them. In practice, this means that retired pointers
+//! go to a list and are only released when they are not protected anymore.
 //!
-//! Hazard pointers solve this with bounded overhead, no GC, and — unlike
-//! epoch-based reclamation (e.g. Crossbeam's `epoch`) — they reclaim memory
-//! *promptly* and do not require global quiescence. Michael's paper notes the
-//! technique's main properties:
-//!
-//! > "The technique has low overhead, does not require special operating
-//! > system or hardware support, and is independent of the number of threads
-//! > and the number of processors."
-//!
-//! In exchange for these properties, hazard pointers pay a per-access cost
-//! (publishing the pointer on each dereference) and limit how many distinct
-//! objects a thread can protect simultaneously per slot.
-//!
-//! This crate implements a small, direct version of the scheme:
-//! - A fixed-size global array of hazard slots ([`HAZARD_ARRAY`]),
-//!   with availability tracked in [`SLOT_AVAILABLE`].
-//! - Per-thread slot ownership recorded in the thread-local [`ID`].
-//! - A lock-free singly-linked retirement list rooted at [`RETIRE_HEAD`].
-//! - RAII protection via [`Guard`] and the [`protect`]/[`unprotect`]/[`retire`]
-//!   functions, plus a [`reclaim`] pass that frees the safe nodes.
+//! For that to happen, the ([`HazardPointers::reclaim`]) function must be actively
+//! called. This function will return all pointers that are safe to be released,
+//! leaving the caller to decide how to do this for each pointer.
 //!
 //! # Example
 //!
-//! A producer thread publishes a pointer into a hazard slot while a consumer
-//! retires it; the memory is reclaimed only once the producer is done:
+//! A single thread publishes a pointer into a hazard slot, dereferences it
+//! safely, then releases the slot:
 //!
-//! ```ignore
-//! use std::sync::Barrier;
-//! use milkyapps_core::hazard_ptrs::{install, protect, unprotect, retire, reclaim};
+//! ```
+//! use milkyapps_core::hazard_ptrs::HazardPointers;
 //!
-//! std::thread::scope(|scope| {
-//!     // Thread A: read the value while protected.
-//!     scope.spawn(|| {
-//!         install();
-//!         let mut value = Box::new(42u64);
-//!         let ptr = value.as_mut() as *mut u64 as *mut ();
+//! // A registry with 8 hazard slots, cheaply shareable via `Clone`.
+//! let hp = HazardPointers::<u64>::with_capacity(8);
 //!
-//!         let guard = protect(ptr); // publish 'ptr' as a hazard pointer
-//!         // ... dereference 'ptr' here; it is guaranteed not to be freed ...
-//!         unprotect(guard);        // release protection
-//!     });
+//! let mut value = Box::new(42u64);
+//! let ptr = value.as_mut() as *mut u64;
 //!
-//!     // Thread B: retire the same object (queue it for later reclamation).
-//!     scope.spawn(|| {
-//!         install();
-//!         let mut value = Box::new(42u64);
-//!         let ptr = value.as_mut() as *mut u64 as *mut ();
+//! // Publish `ptr` so it cannot be reclaimed while we hold the guard.
+//! let guard = hp.protect(ptr).unwrap();
+//! // ... dereference `ptr` here; it is guaranteed not to be freed ...
 //!
-//!         let guard = protect(ptr);
-//!         retire(guard); // pointer is queued, not yet freed
-//!
-//!         // Safe to call periodically: frees only objects that no
-//!         // thread is currently protecting.
-//!         let mut reclaimed = Vec::new();
-//!         reclaim(&mut reclaimed);
-//!     });
-//! });
+//! // Release the slot; `ptr` becomes eligible for reclamation again.
+//! hp.unprotect(guard);
 //! ```
 //!
-//! Notice that `reclaim` will *not* free `ptr` while Thread A's hazard slot
-//! still references it — only once Thread A calls [`unprotect`] does the object
-//! become eligible for reclamation on a subsequent `reclaim`. That is the
-//! guarantee at the heart of hazard pointers.
 
 use std::{
     cell::UnsafeCell,
@@ -120,26 +60,24 @@ use std::{
 };
 
 /// A node in the singly-linked retirement list.
-///
-/// Retired pointers are queued here until a subsequent [`reclaim`] call
-/// determines they are no longer protected by any hazard pointer and frees them.
 #[derive(Debug)]
 struct RetireNode<T> {
-    /// The retired pointer awaiting reclamation.
-    ptr: *mut T,
     /// Pointer to the next node in the retirement list.
     next: AtomicPtr<RetireNode<T>>,
+    /// The retired pointer awaiting reclamation.
+    ptr: *mut T,
 }
 
-/// An RAII guard guarding a pointer that is currently published in a hazard slot.
+/// A guard guarding a protected pointer.
 ///
-/// Dropping a guard without first consuming it via [`unprotect`] or [`retire`]
-/// is a programmer error: in debug builds the [`Drop`] implementation panics
+/// Dropping a guard without first consuming it via
+/// [`HazardPointers::unprotect`] or [`HazardPointers::retire`] is a programmer error:
+/// in debug builds the [`Drop`] implementation panics
 /// (a "drop bomb") to catch leaked protections early.
 pub struct Guard<T> {
     /// Weak pointer to the Registry
     hp: Weak<UnsafeCell<HazardPointersInner<T>>>,
-    /// Slod id guarded by this guard
+    /// Slot id guarded by this guard
     id: usize,
     /// The protected pointer, or null once the guard has been defused.
     ptr: *mut T,
@@ -151,8 +89,8 @@ impl<T> Drop for Guard<T> {
     /// In debug builds this panics if the guard was dropped without a call to [`unprotect`] or [`retire`].
     fn drop(&mut self) {
         if !self.ptr.is_null() {
-            // On debug we will panic, but we must unprotect in case
-            // the panic is catched
+            // On debug we will panic, but we must unprotect first in case
+            // the panic is caught, so the slot is not leaked.
             if let Some(hp) = self.hp.upgrade() {
                 let inner = unsafe { &mut *hp.get() };
                 inner.unprotect_with_id(self.id, self.ptr);
@@ -162,9 +100,6 @@ impl<T> Drop for Guard<T> {
                 panic!(
                     "Hazard Pointer Guard dropped without calling `unprotect` or `retire` (drop_bomb)"
                 );
-            } else {
-                // TODO
-                // warn
             }
         }
     }
@@ -177,47 +112,57 @@ struct HazardPointersInner<T> {
 }
 
 impl<T> HazardPointersInner<T> {
-    /// Publishes `ptr` in the hazard slot identified by `id`.
-    ///
-    /// The slot must currently hold a null pointer; attempting to protect a second
-    /// pointer in the same slot fails
-    pub fn protect_with_id(&mut self, id: usize, ptr: *mut T) -> Result<(), ()> {
-        debug_assert!(id < self.slots.len());
-        match self.slots[id].compare_exchange(null_mut(), ptr, Ordering::AcqRel, Ordering::Relaxed)
-        {
+    /// The slot must currently hold a null pointer.
+    /// Attempting to protect a second pointer in the same slot fails,
+    /// and this can happend because `is_slot_available` is not atomic.
+    pub fn protect_with_id(&mut self, slot_id: usize, ptr: *mut T) -> Result<(), ()> {
+        debug_assert!(slot_id < self.slots.len());
+        match self.slots[slot_id].compare_exchange(
+            null_mut(),
+            ptr,
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        ) {
             Ok(_) => {
-                self.is_slot_available[id] = false;
+                // SAFETY: `is_slot_available` is not atomic, but they function only as a hint.
+                // it is possible that two or more protect falls into this slot.
+                // In this case `compare_exchange` will fail and those protect calls will
+                // endup in another slot.
+                // So this is safe.
+                self.is_slot_available[slot_id] = false;
                 Ok(())
             }
             Err(_) => Err(()),
         }
     }
 
-    /// Clears the hazard slot identified by `id`, releasing protection of `ptr`.
-    ///
     /// Panics if the slot was not currently protecting exactly `ptr`.
-    fn unprotect_with_id(&mut self, id: usize, ptr: *mut T) {
-        debug_assert!(id < self.slots.len());
+    fn unprotect_with_id(&mut self, slot_id: usize, ptr: *mut T) {
+        debug_assert!(slot_id < self.slots.len());
 
-        match self.slots[id].compare_exchange(ptr, null_mut(), Ordering::AcqRel, Ordering::Relaxed)
-        {
-            Ok(_) => {}
+        match self.slots[slot_id].compare_exchange(
+            ptr,
+            null_mut(),
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => {
+                // SAFETY: `is_slot_available` is not atomic, but it is safe to change it here
+                // The worst this will cause is the current slot being not available longer than needed.
+                self.is_slot_available[slot_id] = true;
+            }
             Err(_) => {
-                panic!("This pointer was not being protected")
+                panic!("This pointer was not being protected by this slot")
             }
         }
     }
 
-    /// Queues the pointer held by the slot identified by `id` for retirement and
-    /// then clears that slot's protection.
-    ///
-    /// After this call the pointer is no longer protected by `id`, but is not yet
-    /// reclaimed — it will be freed by a later [`reclaim`] once no slot protects it.
-    fn retire_with_id(&mut self, id: usize, ptr: *mut T) {
-        debug_assert!(id < self.slots.len());
+    /// After this call the pointer is no longer protected.
+    fn retire_with_id(&mut self, slot_id: usize, ptr: *mut T) {
+        debug_assert!(slot_id < self.slots.len());
 
         self.push_retire_head(ptr);
-        self.unprotect_with_id(id, ptr);
+        self.unprotect_with_id(slot_id, ptr);
     }
 
     /// Allocates a [`RetireNode`] for `ptr` and atomically pushes it onto the
@@ -245,15 +190,29 @@ impl<T> HazardPointersInner<T> {
     }
 }
 
+/// Hazard pointers is a technique for *safe memory reclamation* in
+/// concurrent, lock-free data structures.
 #[derive(Clone)]
 pub struct HazardPointers<T> {
     inner: Arc<UnsafeCell<HazardPointersInner<T>>>,
 }
 
-unsafe impl<T> Sync for HazardPointers<T> {}
-unsafe impl<T> Send for HazardPointers<T> {}
+/// T must be send as the reclaimed pointer is returned to any thread
+unsafe impl<T: Send> Sync for HazardPointers<T> {}
+
+/// T must be send as the reclaimed pointer is returned to any thread
+unsafe impl<T: Send> Send for HazardPointers<T> {}
 
 impl<T> HazardPointers<T> {
+    /// Creates a `HazardPointers` with `capacity` slots. This cannot be changed
+    /// dynamically later.
+    ///
+    /// This capacity is ideally bigger than the number of threads times the number
+    /// of pointers that each thread can be protecting at the same time.
+    ///
+    /// To maximize performance `capacity` must be multiple of the architecture
+    /// SIMD capabilities.
+    /// ARM/NEON: 16
     pub fn with_capacity(capacity: usize) -> HazardPointers<T> {
         HazardPointers {
             inner: Arc::new(UnsafeCell::new(HazardPointersInner {
@@ -270,14 +229,16 @@ impl<T> HazardPointers<T> {
         }
     }
 
+    /// Find a slot whose availability flag is set. The flag is only a hint;
+    /// the `protect_with_id` CAS is what actually claims the slot. The scan is
+    /// retried a few times in case a competing thread claims the chosen slot
+    /// first (its CAS fails and we try again).
     fn find_slot_available(&self) -> Option<usize> {
         let inner = unsafe { &mut *self.inner.get() };
-        // TODO fail after N tries
+
         for _ in 0..16 {
             let idx = {
-                if cfg!(target_arch = "x86_64") {
-                    todo!()
-                } else if cfg!(target_arch = "aarch64") {
+                if cfg!(target_arch = "aarch64") {
                     crate::simd::position_of_any_bool(inner.is_slot_available.as_ref(), true)
                 } else {
                     inner.is_slot_available.iter().position(|&b| b)
@@ -319,33 +280,7 @@ impl<T> HazardPointers<T> {
         dbg!(nodes);
     }
 
-    /// Resets all global hazard-pointer state to its initial, empty configuration.
-    ///
-    /// Marks every slot as available, clears every hazard pointer, and empties the
-    /// retirement list. Intended for use between tests; calling this while threads
-    /// are actively using the system is unsafe.
-    ///
-    /// # Safety
-    ///
-    /// This method is unsafe because it clears all the data structures without locks.
-    /// So the caller must guarantee there is nothing running whilst this is called.
-    pub unsafe fn clear(&self) {
-        let inner = unsafe { &mut *self.inner.get() };
-
-        for item in inner.is_slot_available.iter_mut() {
-            *item = true;
-        }
-
-        for slot in inner.slots.iter_mut() {
-            slot.store(null_mut(), Ordering::SeqCst);
-        }
-
-        inner.retire_head.store(null_mut(), Ordering::SeqCst);
-    }
-
-    /// Publishes `ptr` in the current thread's hazard slot and returns a [`Guard`].
-    ///
-    /// Relies on [`install`] having previously claimed a slot for this thread.
+    /// Protects `ptr` untils its [`Guard`] is alive.
     pub fn protect(&self, ptr: *mut T) -> Option<Guard<T>> {
         let inner = unsafe { &mut *self.inner.get() };
 
@@ -362,10 +297,7 @@ impl<T> HazardPointers<T> {
         }
     }
 
-    /// Releases protection of the pointer held by `g`, consuming the guard.
-    ///
-    /// Clears the current thread's hazard slot and defuses the guard so its [`Drop`]
-    /// does not trigger the drop bomb.
+    /// Consume [`Guard`] unprotecting its pointer.
     pub fn unprotect(&self, mut g: Guard<T>) {
         let inner = unsafe { &mut *self.inner.get() };
         inner.unprotect_with_id(g.id, g.ptr);
@@ -374,11 +306,7 @@ impl<T> HazardPointers<T> {
         g.ptr = null_mut();
     }
 
-    /// Retires the pointer guarded by `g`, consuming the guard.
-    ///
-    /// Pushes the pointer onto the retirement list and clears the current thread's
-    /// hazard slot, defusing the guard so its [`Drop`] does not trigger the drop bomb.
-    /// The memory is reclaimed lazily by a subsequent [`reclaim`].
+    /// Consume [`Guard`] retiring its pointer.
     pub fn retire(&self, mut g: Guard<T>) {
         let inner = unsafe { &mut *self.inner.get() };
         inner.retire_with_id(g.id, g.ptr);
@@ -387,6 +315,8 @@ impl<T> HazardPointers<T> {
         g.ptr = null_mut();
     }
 
+    /// Push into `v` all retired pointer which is not being protected.
+    /// Caller must decide what to do with the returned pointers.
     pub fn reclaim(&self, v: &mut Vec<*mut T>) {
         let inner = unsafe { &mut *self.inner.get() };
 
@@ -768,6 +698,39 @@ mod tests {
         hp.reclaim(&mut v);
         assert_eq!(v.len(), 1, "Now g is reclaimed");
         assert_eq!(v[0], ptr as *mut u64, "Now g is reclaimed");
+    }
+
+    #[test]
+    fn unprotect_must_set_slot_as_available() {
+        let hp = HazardPointers::<u64>::with_capacity(2);
+
+        let mut value = Box::new(42u64);
+        let ptr = value.as_mut() as *mut u64;
+
+        let g = hp.protect(ptr).unwrap();
+        let id = g.id;
+        assert!(
+            unsafe { &mut *hp.inner.get() }.is_slot_available[id] == false,
+            "is_slot_available must be false after protect"
+        );
+        hp.unprotect(g);
+        assert!(
+            unsafe { &mut *hp.inner.get() }.is_slot_available[id] == true,
+            "is_slot_available must be true after unprotect"
+        );
+    }
+
+    #[test]
+    fn slots_remain_reusable_across_cycles() {
+        let hp = HazardPointers::<u64>::with_capacity(2);
+
+        let mut value = Box::new(42u64);
+        let ptr = value.as_mut() as *mut u64;
+
+        for _ in 0..16 {
+            let g = hp.protect(ptr).unwrap();
+            hp.unprotect(g);
+        }
     }
 
     #[test]

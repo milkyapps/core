@@ -1,7 +1,10 @@
+/// Searches `buffer` for the first element equal to `value` and returns its
+/// index, or `None` if `value` is not present.
+///
+/// The scan is vectorized with NEON (hence the `aarch64` cfg): 16 bytes are
+/// compared at a time.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
-/// Will search `value` inside `buffer`. No guarantees as the position of find.
-/// It can be the first, the last or any other.
 pub fn position_of_any_bool(buffer: &[bool], value: bool) -> Option<usize> {
     use std::arch::aarch64::{vceqq_u8, vdupq_n_u8, vld1q_u8, vmaxvq_u8};
 
