@@ -104,7 +104,7 @@ impl<'a, T> Drop for Guard<'a, T> {
             // the panic is caught, so the slot is not leaked.
             self.local.unprotect_with_id(self.id, self.ptr);
 
-            if cfg!(debug_assertions) {
+            if cfg!(debug_assertions) && !std::thread::panicking() {
                 panic!("Guard dropped without calling `unprotect` or `retire` (drop_bomb)");
             }
         }
@@ -128,7 +128,10 @@ impl<'a, T> Drop for Local<'a, T> {
         if self.drop_bomb {
             // All ptrs need to be unprotected, because panic can be catched.
             self.finish_by_ref();
-            panic!("Local must be consumed by finish method.")
+
+            if !std::thread::panicking() {
+                panic!("Local must be consumed by finish method.")
+            }
         }
     }
 }
@@ -196,6 +199,13 @@ impl<'a, T> Local<'a, T> {
 
     /// Consume [`Guard`] unprotecting its pointer.
     pub fn unprotect(&self, mut g: Guard<T>) {
+        if !std::ptr::eq(self, g.local) {
+            // We unprotect the ptr and panic after to be signal
+            // a possible bug
+            g.local.unprotect(g);
+            panic!("Guard was not created by this local");
+        }
+
         self.unprotect_with_id(g.id, g.ptr);
         g.defuse();
     }
@@ -206,6 +216,13 @@ impl<'a, T> Local<'a, T> {
     /// any other thread. Which means that [`Local::protect`] should not be called
     /// after [`Local::retire`].
     pub fn retire(&self, g: Guard<T>) {
+        if !std::ptr::eq(self, g.local) {
+            // We retire the ptr and panic after to be signal
+            // a possible bug
+            g.local.retire(g);
+            panic!("Guard was not created by this local");
+        }
+
         self.push_retire_head(g.ptr);
         self.unprotect(g);
     }
@@ -848,5 +865,31 @@ mod tests {
         assert!(v.len() == 1, "Pointer should be returned only once");
 
         local.finish();
+    }
+
+    #[test]
+    fn panic_when_guard_consumed_by_wrong_local() {
+        let ptr = &mut 42u64 as *mut u64;
+
+        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+
+        let local1 = hp.local().unwrap();
+        let local2 = hp.local().unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            assert!(local1.get_slot(0).unwrap().is_null(), "Slot should be null");
+            let g1 = local1.protect(ptr).unwrap();
+            assert!(
+                !local1.get_slot(0).unwrap().is_null(),
+                "Slot should not be null"
+            );
+            local2.unprotect(g1);
+        }));
+
+        // Even panicking, the ptr should be unprotected now
+        assert!(result.is_err(), "Should panic");
+        assert!(local1.get_slot(0).unwrap().is_null(), "Slot should be null");
+
+        local1.finish();
+        local2.finish();
     }
 }
