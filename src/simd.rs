@@ -5,14 +5,15 @@
 /// compared at a time.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
+#[must_use]
 pub fn position_of_any_bool(buffer: &[bool], value: bool) -> Option<usize> {
     use std::arch::aarch64::{vceqq_u8, vdupq_n_u8, vld1q_u8, vmaxvq_u8};
 
     let len = buffer.len();
-    let ptr = buffer.as_ptr() as *const u8;
+    let ptr = buffer.as_ptr().cast::<u8>();
     let mut i = 0;
 
-    let values = unsafe { vdupq_n_u8(if value { 1 } else { 0 }) };
+    let values = unsafe { vdupq_n_u8(u8::from(value)) };
 
     while i + 16 <= len {
         let chunk = unsafe { vld1q_u8(ptr.add(i)) };

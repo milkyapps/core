@@ -94,7 +94,7 @@ pub struct Guard<'a, T> {
     ptr: *mut T,
 }
 
-impl<'a, T> Drop for Guard<'a, T> {
+impl<T> Drop for Guard<'_, T> {
     /// Asserts that the guard was properly disposed of.
     ///
     /// In debug builds this panics if the guard was dropped without a call to [`Guard::unprotect`] or [`Guard::retire`].
@@ -104,6 +104,8 @@ impl<'a, T> Drop for Guard<'a, T> {
             // the panic is caught, so the slot is not leaked.
             self.local.unprotect_with_id(self.id, self.ptr);
 
+            // Clippy suggestion here is to difficult to read
+            #[allow(clippy::manual_assert)]
             if cfg!(debug_assertions) && !std::thread::panicking() {
                 panic!("Guard dropped without calling `unprotect` or `retire` (drop_bomb)");
             }
@@ -111,7 +113,7 @@ impl<'a, T> Drop for Guard<'a, T> {
     }
 }
 
-impl<'a, T> Guard<'a, T> {
+impl<T> Guard<'_, T> {
     /// Consume [`Guard`] unprotecting its pointer.
     pub fn unprotect(mut self) {
         self.local.unprotect_with_id(self.id, self.ptr);
@@ -133,45 +135,50 @@ impl<'a, T> Guard<'a, T> {
     }
 }
 
+/// Give access to protecting pointers. `Local` must be consumed
+/// by [`Local::finish`] to make it clear when all pointers are
+/// unprotected.
 pub struct Local<'a, T> {
     drop_bomb: bool,
     hp: &'a HazardPointers<T>,
     id: usize,
 }
 
-impl<'a, T> Drop for Local<'a, T> {
+impl<T> Drop for Local<'_, T> {
     fn drop(&mut self) {
         if self.drop_bomb {
             // All ptrs need to be unprotected, because panic can be catched.
             self.finish_by_ref();
 
+            // Clippy suggestion here is to difficult to read
+            #[allow(clippy::manual_assert)]
             if !std::thread::panicking() {
-                panic!("Local must be consumed by finish method.")
+                panic!("Local must be consumed by finish method.");
             }
         }
     }
 }
 
-impl<'a, T> Local<'a, T> {
+impl<T> Local<'_, T> {
     fn finish_by_ref(&mut self) {
         let inner = unsafe { &*self.hp.inner.get() };
 
-        for slot in inner.locals[self.id].slots.iter() {
+        for slot in &inner.locals[self.id].slots {
             slot.store(null_mut(), Ordering::Release);
         }
 
-        if let Err(_) = inner.is_available[self.id].compare_exchange(
-            false,
-            true,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
+        if inner.is_available[self.id]
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             panic!("Local was already finished");
         }
 
         self.drop_bomb = false;
     }
 
+    /// Consumes `Local` and explicit unprotected all pointers as a fallback.
+    /// But the correct approach is to unprotect each pointer individually.
     pub fn finish(mut self) {
         self.finish_by_ref();
     }
@@ -205,12 +212,11 @@ impl<'a, T> Local<'a, T> {
         let inner = unsafe { &*self.hp.inner.get() };
         let local = &inner.locals[self.id];
 
-        match local.slots[id].compare_exchange(ptr, null_mut(), Ordering::AcqRel, Ordering::Relaxed)
+        if local.slots[id]
+            .compare_exchange(ptr, null_mut(), Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
         {
-            Ok(_) => {}
-            Err(_) => {
-                panic!("This guard is not protecting ptr")
-            }
+            panic!("This guard is not protecting ptr")
         }
     }
 
@@ -245,7 +251,7 @@ impl<'a, T> Local<'a, T> {
     }
 }
 
-pub struct HazardPointersLocal<T> {
+struct HazardPointersLocal<T> {
     slots: Vec<AtomicPtr<T>>,
     retire_head: AtomicPtr<RetireNode<T>>,
 }
@@ -285,12 +291,12 @@ pub struct HazardPointers<T> {
     inner: Arc<UnsafeCell<HazardPointersInner<T>>>,
 }
 
-/// SAFETY: HazardPointers never dereference `*mut T`, but `reclaim`
+/// SAFETY: `HazardPointers` never dereference `*mut T`, but `reclaim`
 /// returns these pointers to any thread and its caller will `deref` or drop `T`,
 /// which means that `T` must be `Send`.
 unsafe impl<T: Send> Sync for HazardPointers<T> {}
 
-/// SAFETY: HazardPointers never dereference `*mut T`, but `reclaim`
+/// SAFETY: `HazardPointers` never dereference `*mut T`, but `reclaim`
 /// returns these pointers to any thread and its caller will `deref` or drop `T`,
 /// which means that `T` must be `Send`.
 unsafe impl<T: Send> Send for HazardPointers<T> {}
@@ -298,6 +304,7 @@ unsafe impl<T: Send> Send for HazardPointers<T> {}
 impl<T> HazardPointers<T> {
     /// Creates `locals` slots for threads. Each having `ptrs` slots for pointers
     /// to be protected.
+    #[must_use]
     pub fn with_capacity(locals: usize, ptrs: usize) -> HazardPointers<T> {
         HazardPointers {
             inner: Arc::new(UnsafeCell::new(HazardPointersInner {
@@ -308,7 +315,7 @@ impl<T> HazardPointers<T> {
                         v.push(HazardPointersLocal {
                             slots: (0..ptrs).map(|_| AtomicPtr::new(null_mut())).collect(),
                             retire_head: AtomicPtr::new(null_mut()),
-                        })
+                        });
                     }
                     v
                 },
@@ -327,7 +334,7 @@ impl<T> HazardPointers<T> {
     /// Iterate the data structures without any lock. Caller must guarantee nothing is running whilst
     /// this is called.
     #[allow(unused)]
-    unsafe fn debug_retire_list(&self, head: &AtomicPtr<RetireNode<T>>)
+    unsafe fn debug_retire_list(head: &AtomicPtr<RetireNode<T>>)
     where
         T: std::fmt::Debug,
     {
@@ -343,6 +350,10 @@ impl<T> HazardPointers<T> {
         dbg!(nodes);
     }
 
+    /// Give access to protecting pointers. `Local` must be consumed
+    /// by [`Local::finish`] to make it clear when all pointers are
+    /// unprotected.
+    #[must_use]
     pub fn local(&self) -> Option<Local<'_, T>> {
         let inner = unsafe { &*self.inner.get() };
 
@@ -367,8 +378,8 @@ impl<T> HazardPointers<T> {
             return false;
         }
 
-        for local in inner.locals.iter() {
-            for slot in local.slots.iter() {
+        for local in &inner.locals {
+            for slot in &local.slots {
                 let slot_ptr = slot.load(Ordering::Acquire);
                 if slot_ptr == ptr {
                     return true;
@@ -386,22 +397,22 @@ impl<T> HazardPointers<T> {
     /// To avoid allocations, one can also resuse the same `Vec` multiple times.
     pub fn reclaim(&self, reclaimed: &mut Vec<*mut T>) {
         let inner = unsafe { &*self.inner.get() };
-        for l in inner.locals.iter() {
+        for l in &inner.locals {
             let mut head = l.retire_head.swap(null_mut(), Ordering::Acquire);
             while !head.is_null() {
                 // SAFETY: This deref is safe because nodes are only free'd below
                 let node = unsafe { &mut *head };
 
-                if !Self::is_protected(node.ptr, inner) {
+                if Self::is_protected(node.ptr, inner) {
+                    head = node.next.load(Ordering::Acquire);
+                    node.next.store(null_mut(), Ordering::Release);
+                    l.push_retire_node(node);
+                } else {
                     // SAFETY: This thread can take ownership because it is the only owner
                     // of this raw pointer.
                     let node = unsafe { Box::from_raw(head) };
                     reclaimed.push(node.ptr);
                     head = node.next.load(Ordering::Acquire);
-                } else {
-                    head = node.next.load(Ordering::Acquire);
-                    node.next.store(null_mut(), Ordering::Release);
-                    l.push_retire_node(node);
                 }
             }
         }
