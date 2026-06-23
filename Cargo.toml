@@ -1,6 +1,6 @@
 [package]
 name = "milkyapps-core"
-author = "Daniel Frederico Lins Leite"
+authors = ["Daniel Frederico Lins Leite"]
 version = "0.1.0"
 edition = "2024"
 

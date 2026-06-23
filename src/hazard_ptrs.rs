@@ -160,16 +160,13 @@ impl<'a, T> Local<'a, T> {
             slot.store(null_mut(), Ordering::Release);
         }
 
-        match inner.is_available[self.id].compare_exchange(
+        if let Err(_) = inner.is_available[self.id].compare_exchange(
             false,
             true,
             Ordering::AcqRel,
             Ordering::Acquire,
         ) {
-            Ok(_) => {}
-            Err(_) => {
-                panic!("Local was already finished");
-            }
+            panic!("Local was already finished");
         }
 
         self.drop_bomb = false;
@@ -288,10 +285,14 @@ pub struct HazardPointers<T> {
     inner: Arc<UnsafeCell<HazardPointersInner<T>>>,
 }
 
-/// T must be send as the reclaimed pointer is returned to any thread
+/// SAFETY: HazardPointers never dereference `*mut T`, but `reclaim`
+/// returns these pointers to any thread and its caller will `deref` or drop `T`,
+/// which means that `T` must be `Send`.
 unsafe impl<T: Send> Sync for HazardPointers<T> {}
 
-/// T must be send as the reclaimed pointer is returned to any thread
+/// SAFETY: HazardPointers never dereference `*mut T`, but `reclaim`
+/// returns these pointers to any thread and its caller will `deref` or drop `T`,
+/// which means that `T` must be `Send`.
 unsafe impl<T: Send> Send for HazardPointers<T> {}
 
 impl<T> HazardPointers<T> {
@@ -300,24 +301,12 @@ impl<T> HazardPointers<T> {
     pub fn with_capacity(locals: usize, ptrs: usize) -> HazardPointers<T> {
         HazardPointers {
             inner: Arc::new(UnsafeCell::new(HazardPointersInner {
-                is_available: {
-                    let mut v = vec![];
-                    for _ in 0..locals {
-                        v.push(AtomicBool::new(true));
-                    }
-                    v
-                },
+                is_available: (0..locals).map(|_| AtomicBool::new(true)).collect(),
                 locals: {
-                    let mut v = vec![];
+                    let mut v = Vec::with_capacity(locals);
                     for _ in 0..locals {
                         v.push(HazardPointersLocal {
-                            slots: {
-                                let mut v = vec![];
-                                for _ in 0..ptrs {
-                                    v.push(AtomicPtr::new(null_mut()));
-                                }
-                                v
-                            },
+                            slots: (0..ptrs).map(|_| AtomicPtr::new(null_mut())).collect(),
                             retire_head: AtomicPtr::new(null_mut()),
                         })
                     }
@@ -374,6 +363,10 @@ impl<T> HazardPointers<T> {
     }
 
     fn is_protected(ptr: *mut T, inner: &HazardPointersInner<T>) -> bool {
+        if ptr.is_null() {
+            return false;
+        }
+
         for local in inner.locals.iter() {
             for slot in local.slots.iter() {
                 let slot_ptr = slot.load(Ordering::Acquire);
@@ -425,8 +418,7 @@ mod tests {
 
     #[test]
     fn protect_unprotect_must_use_slots() {
-        let mut value = Box::new(42u64);
-        let ptr = value.as_mut() as *mut u64;
+        let ptr = &mut 2u64 as *mut u64;
 
         let hp = HazardPointers::<u64>::with_capacity(8, 8);
         let local = hp.local().unwrap();
@@ -452,8 +444,7 @@ mod tests {
 
     #[test]
     fn more_protects_than_slots() {
-        let mut value = Box::new(42u64);
-        let ptr = value.as_mut() as *mut u64;
+        let ptr = &mut 42u64 as *mut u64;
 
         let hp = HazardPointers::<u64>::with_capacity(8, 8);
         let local = hp.local().unwrap();
