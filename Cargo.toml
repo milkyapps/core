@@ -8,6 +8,13 @@ edition = "2024"
 
 [dev-dependencies]
 micromeasure = "0.6"
+# Used only when running the tests under `--cfg loom` (see the `test-loom`
+# justfile recipe).
+loom = "0.7"
+
+[lints.rust]
+# `loom` is enabled via `--cfg loom` (RUSTFLAGS) for the `test-loom` recipe.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [[bench]]
 name = "simd"

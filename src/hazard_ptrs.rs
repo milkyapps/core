@@ -60,15 +60,11 @@
 //! ```
 //!
 
-use std::{
-    cell::UnsafeCell,
-    panic,
-    ptr::null_mut,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicPtr, Ordering},
-    },
+use crate::sync::{
+    Arc, UnsafeCell,
+    atomic::{AtomicBool, AtomicPtr, Ordering},
 };
+use std::{panic, ptr::null_mut};
 
 /// A node in the singly-linked retirement list.
 #[derive(Debug)]
@@ -425,482 +421,508 @@ impl<T> HazardPointers<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Barrier, atomic::AtomicUsize};
+    use crate::{
+        sync::{Barrier, atomic::AtomicUsize, model},
+        thread::ThreadSafePtr,
+    };
 
     #[test]
     fn protect_unprotect_must_use_slots() {
-        let ptr = &mut 2u64 as *mut u64;
+        model(|| {
+            let ptr = &mut 2u64 as *mut u64;
 
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
-        let local = hp.local().unwrap();
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
 
-        assert!(
-            local.get_slot(0).unwrap().is_null(),
-            "Slot should not be protecting any pointer"
-        );
-        let g = local.protect(ptr).unwrap();
-        assert_eq!(
-            local.get_slot(0).unwrap(),
-            ptr,
-            "Slow should be protecting ptr"
-        );
-        g.unprotect();
-        assert!(
-            local.get_slot(0).unwrap().is_null(),
-            "Slot should not be protecting ptr anymore"
-        );
+            assert!(
+                local.get_slot(0).unwrap().is_null(),
+                "Slot should not be protecting any pointer"
+            );
+            let g = local.protect(ptr).unwrap();
+            assert_eq!(
+                local.get_slot(0).unwrap(),
+                ptr,
+                "Slow should be protecting ptr"
+            );
+            g.unprotect();
+            assert!(
+                local.get_slot(0).unwrap().is_null(),
+                "Slot should not be protecting ptr anymore"
+            );
 
-        local.finish();
+            local.finish();
+        });
     }
 
     #[test]
     fn more_protects_than_slots() {
-        let ptr = &mut 42u64 as *mut u64;
+        model(|| {
+            let ptr = &mut 42u64 as *mut u64;
 
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
-        let local = hp.local().unwrap();
-        let mut guards = vec![];
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
+            let mut guards = vec![];
 
-        for _ in 0..9 {
-            guards.push(local.protect(ptr));
-        }
+            for _ in 0..9 {
+                guards.push(local.protect(ptr));
+            }
 
-        let some_qty = guards.iter().filter(|x| x.is_some()).count();
-        let none_qty = guards.iter().filter(|x| x.is_none()).count();
+            let some_qty = guards.iter().filter(|x| x.is_some()).count();
+            let none_qty = guards.iter().filter(|x| x.is_none()).count();
 
-        assert_eq!(some_qty, 8);
-        assert_eq!(none_qty, 1);
+            assert_eq!(some_qty, 8);
+            assert_eq!(none_qty, 1);
 
-        for g in guards.into_iter().flatten() {
-            g.unprotect();
-        }
+            for g in guards.into_iter().flatten() {
+                g.unprotect();
+            }
 
-        local.finish();
+            local.finish();
+        });
     }
 
     #[test]
     fn reclaim_empty() {
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
-        let local = hp.local().unwrap();
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
 
-        // Should not panic or crash
-        assert!(local.retire_head().is_null(), "Retire list should be empty");
+            // Should not panic or crash
+            assert!(local.retire_head().is_null(), "Retire list should be empty");
 
-        let mut v = Vec::new();
-        hp.reclaim(&mut v);
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
 
-        assert!(v.is_empty(), "Reclaim Vec should be empty");
-        assert!(local.retire_head().is_null(), "Retire list should be empty");
+            assert!(v.is_empty(), "Reclaim Vec should be empty");
+            assert!(local.retire_head().is_null(), "Retire list should be empty");
 
-        local.finish();
+            local.finish();
+        });
     }
 
     #[test]
     fn single_protect_retire_and_reclaim() {
-        let ptr = &mut 42u64 as *mut u64;
+        model(|| {
+            let ptr = &mut 42u64 as *mut u64;
 
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
-        let local = hp.local().unwrap();
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
 
-        let g = local.protect(ptr).unwrap();
-        g.retire();
+            let g = local.protect(ptr).unwrap();
+            g.retire();
 
-        let mut v = Vec::with_capacity(16);
-        hp.reclaim(&mut v);
+            let mut v = Vec::with_capacity(16);
+            hp.reclaim(&mut v);
 
-        assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
-        assert_eq!(v[0], ptr, "Reclaimed pointer should be the retired one");
+            assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
+            assert_eq!(v[0], ptr, "Reclaimed pointer should be the retired one");
 
-        local.finish();
+            local.finish();
+        });
     }
 
     #[test]
     fn protect_prevents_reclaim() {
-        let ptr = &mut 42u64 as *mut u64;
+        model(|| {
+            let ptr = &mut 42u64 as *mut u64;
 
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
-        let local1 = hp.local().unwrap();
-        let local2 = hp.local().unwrap();
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local1 = hp.local().unwrap();
+            let local2 = hp.local().unwrap();
 
-        // Simulate two threads that are protecting the same ptr
-        let g11 = local1.protect(ptr).unwrap();
+            // Simulate two threads that are protecting the same ptr
+            let g11 = local1.protect(ptr).unwrap();
 
-        let g12 = local2.protect(ptr).unwrap();
-        g12.retire();
+            let g12 = local2.protect(ptr).unwrap();
+            g12.retire();
 
-        assert!(
-            local1.retire_head().is_null(),
-            "Retire List should be empty"
-        );
-        assert!(
-            !local2.retire_head().is_null(),
-            "Retire List should not be empty"
-        );
+            assert!(
+                local1.retire_head().is_null(),
+                "Retire List should be empty"
+            );
+            assert!(
+                !local2.retire_head().is_null(),
+                "Retire List should not be empty"
+            );
 
-        // Because 'ptr' is still protected, it should NOT be reclaimed
-        let mut v = Vec::new();
-        hp.reclaim(&mut v);
-        assert!(
-            v.is_empty(),
-            "ptr is still protected and should not be reclaimed"
-        );
+            // Because 'ptr' is still protected, it should NOT be reclaimed
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
+            assert!(
+                v.is_empty(),
+                "ptr is still protected and should not be reclaimed"
+            );
 
-        // Now ptr is no long protected and should be reclaimed
-        g11.unprotect();
+            // Now ptr is no long protected and should be reclaimed
+            g11.unprotect();
 
-        hp.reclaim(&mut v);
-        assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
-        assert_eq!(v[0], ptr, "Reclaimed pointer should be the retired one");
+            hp.reclaim(&mut v);
+            assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
+            assert_eq!(v[0], ptr, "Reclaimed pointer should be the retired one");
 
-        assert!(
-            local1.retire_head().is_null(),
-            "Retire List should be empty"
-        );
-        assert!(
-            local2.retire_head().is_null(),
-            "Retire List should be empty"
-        );
+            assert!(
+                local1.retire_head().is_null(),
+                "Retire List should be empty"
+            );
+            assert!(
+                local2.retire_head().is_null(),
+                "Retire List should be empty"
+            );
 
-        local1.finish();
-        local2.finish();
+            local1.finish();
+            local2.finish();
+        });
     }
 
     #[test]
     fn multiple_retirements() {
-        let ptr1 = &mut 42u64 as *mut u64;
-        let ptr2 = &mut 42u64 as *mut u64;
-        let ptr3 = &mut 42u64 as *mut u64;
+        model(|| {
+            let ptr1 = &mut 42u64 as *mut u64;
+            let ptr2 = &mut 42u64 as *mut u64;
+            let ptr3 = &mut 42u64 as *mut u64;
 
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
 
-        let local1 = hp.local().unwrap();
-        let local2 = hp.local().unwrap();
-        let local3 = hp.local().unwrap();
+            let local1 = hp.local().unwrap();
+            let local2 = hp.local().unwrap();
+            let local3 = hp.local().unwrap();
 
-        // Simulate three retirements without active protections
-        local1.protect(ptr1).unwrap().retire();
-        local2.protect(ptr2).unwrap().retire();
-        local3.protect(ptr3).unwrap().retire();
+            // Simulate three retirements without active protections
+            local1.protect(ptr1).unwrap().retire();
+            local2.protect(ptr2).unwrap().retire();
+            local3.protect(ptr3).unwrap().retire();
 
-        local1.finish();
-        local2.finish();
-        local3.finish();
+            local1.finish();
+            local2.finish();
+            local3.finish();
 
-        let mut v = Vec::new();
-        hp.reclaim(&mut v);
-        assert_eq!(v.len(), 3, "All retired pointer should have been reclaimed");
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
+            assert_eq!(v.len(), 3, "All retired pointer should have been reclaimed");
+        });
     }
 
     #[test]
     fn partial_reclaim() {
-        let ptr1 = &mut 42u64 as *mut u64;
-        let ptr2 = &mut 42u64 as *mut u64;
+        model(|| {
+            let ptr1 = &mut 42u64 as *mut u64;
+            let ptr2 = &mut 42u64 as *mut u64;
 
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
-        let local = hp.local().unwrap();
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
 
-        // Protect p1, leave p2 unprotected
-        // Put both into the retired list
-        let g11 = local.protect(ptr1).unwrap();
-        let g12 = local.protect(ptr1).unwrap();
-        g12.retire();
-        let g2 = local.protect(ptr2).unwrap();
-        g2.retire();
+            // Protect p1, leave p2 unprotected
+            // Put both into the retired list
+            let g11 = local.protect(ptr1).unwrap();
+            let g12 = local.protect(ptr1).unwrap();
+            g12.retire();
+            let g2 = local.protect(ptr2).unwrap();
+            g2.retire();
 
-        // Only ptr2 should be reclaimed because ptr1 is still in Hazard Array
-        let mut v = Vec::new();
-        hp.reclaim(&mut v);
-        assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
-        assert_eq!(v[0], ptr2, "Only ptr2 is not protected");
+            // Only ptr2 should be reclaimed because ptr1 is still in Hazard Array
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
+            assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
+            assert_eq!(v[0], ptr2, "Only ptr2 is not protected");
 
-        g11.retire();
-        local.finish();
+            g11.retire();
+            local.finish();
 
-        let mut v = vec![];
-        hp.reclaim(&mut v);
+            let mut v = vec![];
+            hp.reclaim(&mut v);
+        });
     }
 
     #[test]
     fn protect_multi_thread() {
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
 
-        let qty_threads = 2; //TODO Increate to 12
-        let protect_barrier = Barrier::new(qty_threads + 1);
-        let wait_asserts_barrier = Barrier::new(qty_threads + 1);
+            let qty_threads = 2; //TODO Increate to 12
+            let protect_barrier = Barrier::new(qty_threads + 1);
+            let wait_asserts_barrier = Barrier::new(qty_threads + 1);
 
-        std::thread::scope(|scope| {
-            for _ in 0..qty_threads {
-                scope.spawn(|| {
-                    let ptr = &mut 42u64 as *mut u64;
+            crate::thread::scope(|scope| {
+                for _ in 0..qty_threads {
+                    scope.spawn(|| {
+                        let ptr = &mut 42u64 as *mut u64;
 
-                    let local = hp.local().unwrap();
-                    let g = local.protect(ptr).unwrap();
+                        let local = hp.local().unwrap();
+                        let g = local.protect(ptr).unwrap();
 
-                    protect_barrier.wait();
-                    wait_asserts_barrier.wait();
+                        protect_barrier.wait();
+                        wait_asserts_barrier.wait();
 
-                    g.unprotect();
-                    local.finish();
-                });
-            }
+                        g.unprotect();
+                        local.finish();
+                    });
+                }
 
-            protect_barrier.wait();
+                protect_barrier.wait();
 
-            for l in unsafe { &*hp.inner.get() }.locals.iter().take(qty_threads) {
+                for l in unsafe { &*hp.inner.get() }.locals.iter().take(qty_threads) {
+                    if let Some(slot) = l.get_slot(0) {
+                        assert!(!slot.is_null(), "Pointer should be protected");
+                    }
+                }
+
+                wait_asserts_barrier.wait();
+            });
+
+            for l in &unsafe { &*hp.inner.get() }.locals {
                 if let Some(slot) = l.get_slot(0) {
-                    assert!(!slot.is_null(), "Pointer should be protected");
+                    assert!(slot.is_null(), "Pointer should not be protected");
                 }
             }
-
-            wait_asserts_barrier.wait();
         });
-
-        for l in &unsafe { &*hp.inner.get() }.locals {
-            if let Some(slot) = l.get_slot(0) {
-                assert!(slot.is_null(), "Pointer should not be protected");
-            }
-        }
     }
 
     #[test]
     fn high_contention_protect_and_retire() {
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
 
-        let qty_threads = 2; //TODO Increase to 12
-        let items_per_thread = 100u64;
-        let barrier = Barrier::new(qty_threads);
+            let qty_threads = 2; //TODO Increase to 12
+            let items_per_thread = 100u64;
+            let barrier = Barrier::new(qty_threads);
 
-        let retired_qty = AtomicUsize::new(0);
+            let retired_qty = AtomicUsize::new(0);
 
-        std::thread::scope(|scope| {
-            for _ in 0..qty_threads {
-                scope.spawn(|| {
-                    let ptrs = (0..items_per_thread)
-                        .map(|i| std::ptr::from_mut::<u64>(Box::leak(Box::new(i))))
-                        .collect::<Vec<_>>();
+            crate::thread::scope(|scope| {
+                for _ in 0..qty_threads {
+                    scope.spawn(|| {
+                        let ptrs = (0..items_per_thread)
+                            .map(|i| std::ptr::from_mut::<u64>(Box::leak(Box::new(i))))
+                            .collect::<Vec<_>>();
 
-                    // Sync start to increase contention
-                    barrier.wait();
+                        // Sync start to increase contention
+                        barrier.wait();
 
-                    let local = hp.local().unwrap();
-                    for ptr in ptrs {
-                        if let Some(g) = local.protect(ptr) {
-                            g.retire();
-                            retired_qty.fetch_add(1, Ordering::Relaxed);
+                        let local = hp.local().unwrap();
+                        for ptr in ptrs {
+                            if let Some(g) = local.protect(ptr) {
+                                g.retire();
+                                retired_qty.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
-                    }
-                    local.finish();
-                });
+                        local.finish();
+                    });
+                }
+            });
+
+            // Final reclamation of everything
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
+            assert_eq!(
+                v.len(),
+                retired_qty.load(Ordering::SeqCst),
+                "All pointers that were retired should be reclaimed"
+            );
+
+            for ptr in v {
+                let _ = unsafe { Box::from_raw(ptr) };
             }
         });
-
-        // Final reclamation of everything
-        let mut v = Vec::new();
-        hp.reclaim(&mut v);
-        assert_eq!(
-            v.len(),
-            retired_qty.load(Ordering::SeqCst),
-            "All pointers that were retired should be reclaimed"
-        );
-
-        for ptr in v {
-            let _ = unsafe { Box::from_raw(ptr) };
-        }
     }
-
-    struct ThreadSafePtr<T>(*mut T);
-
-    impl<T> ThreadSafePtr<T> {
-        pub fn ptr(&self) -> *mut T {
-            self.0
-        }
-    }
-
-    unsafe impl<T> Send for ThreadSafePtr<T> {}
-    unsafe impl<T> Sync for ThreadSafePtr<T> {}
 
     #[test]
     fn mixed_concurrent_access() {
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
 
-        // This simulates the real-world hazard pointer use case:
-        // Thread A is reading/protecting a value,
-        // while Thread B is trying to retire it.
+            // This simulates the real-world hazard pointer use case:
+            // Thread A is reading/protecting a value,
+            // while Thread B is trying to retire it.
 
-        let ptr = ThreadSafePtr(std::ptr::from_mut::<u64>(&mut 42u64));
+            let ptr = ThreadSafePtr(std::ptr::from_mut::<u64>(&mut 42u64));
 
-        // thread 1: g is protected
-        // thread 2: g is protected and retired
-        let barrier1 = Barrier::new(2);
+            // thread 1: g is protected
+            // thread 2: g is protected and retired
+            let barrier1 = Barrier::new(2);
 
-        // thread 1: g is still protected
-        // thread 2: reclaim is called
-        let barrier2 = Barrier::new(2);
+            // thread 1: g is still protected
+            // thread 2: reclaim is called
+            let barrier2 = Barrier::new(2);
 
-        std::thread::scope(|scope| {
-            scope.spawn(|| {
-                let local = hp.local().unwrap();
-                let g = local.protect(ptr.ptr()).unwrap();
-                barrier1.wait();
-                barrier2.wait();
-                g.unprotect();
-                local.finish();
+            crate::thread::scope(|scope| {
+                scope.spawn(|| {
+                    let local = hp.local().unwrap();
+                    let g = local.protect(ptr.ptr()).unwrap();
+                    barrier1.wait();
+                    barrier2.wait();
+                    g.unprotect();
+                    local.finish();
+                });
+
+                scope.spawn(|| {
+                    let local = hp.local().unwrap();
+                    let g = local.protect(ptr.ptr()).unwrap();
+                    g.retire();
+                    local.finish();
+                    barrier1.wait();
+
+                    let mut v = Vec::new();
+                    hp.reclaim(&mut v);
+                    assert!(v.is_empty(), "g is still protected by thread 1");
+
+                    barrier2.wait();
+                });
             });
 
-            scope.spawn(|| {
-                let local = hp.local().unwrap();
-                let g = local.protect(ptr.ptr()).unwrap();
-                g.retire();
-                local.finish();
-                barrier1.wait();
-
-                let mut v = Vec::new();
-                hp.reclaim(&mut v);
-                assert!(v.is_empty(), "g is still protected by thread 1");
-
-                barrier2.wait();
-            });
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
+            assert_eq!(v.len(), 1, "Now g is reclaimed");
+            assert_eq!(v[0], ptr.ptr(), "Now g is reclaimed");
         });
-
-        let mut v = Vec::new();
-        hp.reclaim(&mut v);
-        assert_eq!(v.len(), 1, "Now g is reclaimed");
-        assert_eq!(v[0], ptr.ptr(), "Now g is reclaimed");
     }
 
     #[test]
     fn local_finish_must_set_local_as_available() {
-        let hp = HazardPointers::<u64>::with_capacity(2, 2);
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(2, 2);
 
-        let local1 = hp.local().unwrap();
-        let local2 = hp.local().unwrap();
+            let local1 = hp.local().unwrap();
+            let local2 = hp.local().unwrap();
 
-        assert!(hp.local().is_none(), "Local should have returned None");
+            assert!(hp.local().is_none(), "Local should have returned None");
 
-        local1.finish();
-        local2.finish();
+            local1.finish();
+            local2.finish();
 
-        let local1 = hp.local().unwrap();
-        let local2 = hp.local().unwrap();
+            let local1 = hp.local().unwrap();
+            let local2 = hp.local().unwrap();
 
-        assert!(hp.local().is_none(), "Local should have returned None");
+            assert!(hp.local().is_none(), "Local should have returned None");
 
-        local1.finish();
-        local2.finish();
+            local1.finish();
+            local2.finish();
+        });
     }
 
     #[test]
     fn slots_remain_reusable_across_cycles() {
-        let hp = HazardPointers::<u64>::with_capacity(2, 2);
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(2, 2);
 
-        let ptr = &mut 42u64 as *mut u64;
+            let ptr = &mut 42u64 as *mut u64;
 
-        for _ in 0..16 {
-            let local = hp.local().unwrap();
             for _ in 0..16 {
-                let g = local.protect(ptr).unwrap();
-                g.unprotect();
+                let local = hp.local().unwrap();
+                for _ in 0..16 {
+                    let g = local.protect(ptr).unwrap();
+                    g.unprotect();
+                }
+                local.finish();
             }
-            local.finish();
-        }
+        });
     }
 
     #[test]
     fn guard_drop() {
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
 
-        let ptr = &mut 42u64 as *mut u64;
+            let ptr = &mut 42u64 as *mut u64;
 
-        let local = hp.local().unwrap();
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            assert!(local.get_slot(0).unwrap().is_null(), "slot should be free");
-            let _g = local.protect(ptr);
-            assert!(!local.get_slot(0).unwrap().is_null(), "ptr is protected");
-        }));
+            let local = hp.local().unwrap();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                assert!(local.get_slot(0).unwrap().is_null(), "slot should be free");
+                let _g = local.protect(ptr);
+                assert!(!local.get_slot(0).unwrap().is_null(), "ptr is protected");
+            }));
 
-        assert!(
-            local.get_slot(0).unwrap().is_null(),
-            "slot should be free now"
-        );
-
-        if cfg!(debug_assertions) {
             assert!(
-                result.is_err(),
-                "On Debug, dropping a live guard must trip the drop bomb"
+                local.get_slot(0).unwrap().is_null(),
+                "slot should be free now"
             );
-        } else {
-            assert!(
-                result.is_ok(),
-                "On Release, dropping a live guard does not panic"
-            );
-        }
 
-        local.finish();
+            if cfg!(debug_assertions) {
+                assert!(
+                    result.is_err(),
+                    "On Debug, dropping a live guard must trip the drop bomb"
+                );
+            } else {
+                assert!(
+                    result.is_ok(),
+                    "On Release, dropping a live guard does not panic"
+                );
+            }
+
+            local.finish();
+        });
     }
 
     #[test]
     fn double_retire() {
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
 
-        let ptr = &mut 42u64 as *mut u64;
+            let ptr = &mut 42u64 as *mut u64;
 
-        let local = hp.local().unwrap();
-        let g1 = local.protect(ptr).unwrap();
-        g1.retire();
-        let g2 = local.protect(ptr).unwrap();
-        g2.retire();
+            let local = hp.local().unwrap();
+            let g1 = local.protect(ptr).unwrap();
+            g1.retire();
+            let g2 = local.protect(ptr).unwrap();
+            g2.retire();
 
-        let mut v = vec![];
-        hp.reclaim(&mut v);
+            let mut v = vec![];
+            hp.reclaim(&mut v);
 
-        dbg!(&v);
-        assert!(v.len() == 1, "Pointer should be returned only once");
+            dbg!(&v);
+            assert!(v.len() == 1, "Pointer should be returned only once");
 
-        local.finish();
+            local.finish();
+        });
     }
 
     #[test]
     fn protect_null_pointer() {
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
-        let local = hp.local().unwrap();
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
 
-        assert!(
-            local.protect(null_mut()).is_none(),
-            "Should return None for null pointers"
-        );
+            assert!(
+                local.protect(null_mut()).is_none(),
+                "Should return None for null pointers"
+            );
 
-        local.finish();
+            local.finish();
+        });
     }
 
     #[test]
     fn empty_slots_must_not_protect_any_pointer() {
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
-        let local = hp.local().unwrap();
-        let ptr = &mut 42u64 as *mut u64;
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
+            let ptr = &mut 42u64 as *mut u64;
 
-        // No slot is protecting anything, so a non-null pointer that was
-        // never protected should be considered unprotected.
-        let mut reclaimed = Vec::new();
-        hp.reclaim(&mut reclaimed);
-        assert!(reclaimed.is_empty());
+            // No slot is protecting anything, so a non-null pointer that was
+            // never protected should be considered unprotected.
+            let mut reclaimed = Vec::new();
+            hp.reclaim(&mut reclaimed);
+            assert!(reclaimed.is_empty());
 
-        // Sanity: actually protecting and then retiring the pointer works.
-        let g = local.protect(ptr).unwrap();
-        g.retire();
-        let mut reclaimed = Vec::new();
-        hp.reclaim(&mut reclaimed);
-        assert_eq!(reclaimed.len(), 1);
-        assert_eq!(reclaimed[0], ptr);
+            // Sanity: actually protecting and then retiring the pointer works.
+            let g = local.protect(ptr).unwrap();
+            g.retire();
+            let mut reclaimed = Vec::new();
+            hp.reclaim(&mut reclaimed);
+            assert_eq!(reclaimed.len(), 1);
+            assert_eq!(reclaimed[0], ptr);
 
-        local.finish();
+            local.finish();
+        });
     }
 
     #[test]
     fn zero_locals_returns_none() {
-        let hp = HazardPointers::<u64>::with_capacity(0, 8);
-        assert!(
-            hp.local().is_none(),
-            "With zero locals, local() must return None"
-        );
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(0, 8);
+            assert!(
+                hp.local().is_none(),
+                "With zero locals, local() must return None"
+            );
+        });
     }
 }
