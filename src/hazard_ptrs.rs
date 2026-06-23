@@ -17,22 +17,22 @@
 //! them. Naively freeing the memory immediately is unsound as another thread may
 //! be using the pointed memory, leading to a use-after-free.
 //!
-//! Hazard pointers solves this by "protecting" ([`Local::protect`])
-//! and "retiring" ([`Guard::retire`]) pointers, instead
+//! Hazard pointers solves this by "protecting"
+//! and "retiring" pointers, instead
 //! of immediately releasing them. In practice, this means that retired pointers
 //! go to a list and are only released when they are not protected anymore.
 //!
-//! For that to happen, the ([`HazardPointers::reclaim`]) function must be actively
+//! For that to happen, the `reclaim` function must be actively
 //! called. This function will return all pointers that are safe to be released,
 //! leaving the caller to decide how to do this for each pointer.
 //!
 //! # Cannot protect a retired pointer
 //!
 //! A pointer can ONLY be retired if it is guaranteed that it is no longer reacheable by
-//! any other thread. Which means that [`Local::protect`] should not be called
-//! after [`Guard::retire`].
+//! any other thread. Which means that `protect` should not be called
+//! after `retire`.
 //!
-//! The breaking of this invariant means that a call to [`HazardPointers::reclaim`] will
+//! The breaking of this invariant means that a call to `reclaim` will
 //! return a pointer that can potentially be protected after being returned.
 //!
 //! # Example
