@@ -676,7 +676,7 @@ mod tests {
             for _ in 0..qty_threads {
                 scope.spawn(|| {
                     let ptrs = (0..items_per_thread)
-                        .map(|i| std::ptr::from_mut::<u64>(Box::leak(Box::new(i as u64))))
+                        .map(|i| std::ptr::from_mut::<u64>(Box::leak(Box::new(i))))
                         .collect::<Vec<_>>();
 
                     // Sync start to increase contention
