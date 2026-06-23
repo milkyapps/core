@@ -18,7 +18,7 @@
 //! be using the pointed memory, leading to a use-after-free.
 //!
 //! Hazard pointers solves this by "protecting" ([`Local::protect`])
-//! and "retiring" ([`Local::retire`]) pointers, instead
+//! and "retiring" ([`Guard::retire`]) pointers, instead
 //! of immediately releasing them. In practice, this means that retired pointers
 //! go to a list and are only released when they are not protected anymore.
 //!
@@ -30,7 +30,7 @@
 //!
 //! A pointer can ONLY be retired if it is guaranteed that it is no longer reacheable by
 //! any other thread. Which means that [`Local::protect`] should not be called
-//! after [`Local::retire`].
+//! after [`Guard::retire`].
 //!
 //! The breaking of this invariant means that a call to [`HazardPointers::reclaim`] will
 //! return a pointer that can potentially be protected after being returned.
@@ -55,7 +55,7 @@
 //! // ... dereference `ptr` here; it is guaranteed not to be freed ...
 //!
 //! // Release the slot; `ptr` becomes eligible for reclamation again.
-//! local.unprotect(guard);
+//! guard.unprotect();
 //! local.finish();
 //! ```
 //!
@@ -82,7 +82,7 @@ struct RetireNode<T> {
 /// A guard guarding a protected pointer.
 ///
 /// Dropping a guard without first consuming it via
-/// [`Local::unprotect`] or [`Local::retire`] is a programmer error:
+/// [`Guard::unprotect`] or [`Guard::retire`] is a programmer error:
 /// in debug builds the [`Drop`] implementation panics
 /// (a "drop bomb") to catch leaked protections early.
 pub struct Guard<'a, T> {
@@ -97,7 +97,7 @@ pub struct Guard<'a, T> {
 impl<'a, T> Drop for Guard<'a, T> {
     /// Asserts that the guard was properly disposed of.
     ///
-    /// In debug builds this panics if the guard was dropped without a call to [`Local::unprotect`] or [`Local::retire`].
+    /// In debug builds this panics if the guard was dropped without a call to [`Guard::unprotect`] or [`Guard::retire`].
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             // On debug we will panic, but we must unprotect first in case
@@ -112,6 +112,22 @@ impl<'a, T> Drop for Guard<'a, T> {
 }
 
 impl<'a, T> Guard<'a, T> {
+    /// Consume [`Guard`] unprotecting its pointer.
+    pub fn unprotect(mut self) {
+        self.local.unprotect_with_id(self.id, self.ptr);
+        self.defuse();
+    }
+
+    /// Consume [`Guard`] retiring its pointer.
+    ///
+    /// A pointer can ONLY be retired if it is guaranteed that it is no longer reacheable by
+    /// any other thread. Which means that [`Local::protect`] should not be called
+    /// after [`Guard::retire`].
+    pub fn retire(self) {
+        self.local.push_retire_head(self.ptr);
+        self.unprotect();
+    }
+
     fn defuse(&mut self) {
         self.ptr = null_mut();
     }
@@ -165,6 +181,10 @@ impl<'a, T> Local<'a, T> {
 
     /// Protects `ptr` whilst its [`Guard`] is alive.
     pub fn protect(&self, ptr: *mut T) -> Option<Guard<'_, T>> {
+        if ptr.is_null() {
+            return None;
+        }
+
         let inner = unsafe { &*self.hp.inner.get() };
         let local = &inner.locals[self.id];
 
@@ -195,36 +215,6 @@ impl<'a, T> Local<'a, T> {
                 panic!("This guard is not protecting ptr")
             }
         }
-    }
-
-    /// Consume [`Guard`] unprotecting its pointer.
-    pub fn unprotect(&self, mut g: Guard<T>) {
-        if !std::ptr::eq(self, g.local) {
-            // We unprotect the ptr and panic after to be signal
-            // a possible bug
-            g.local.unprotect(g);
-            panic!("Guard was not created by this local");
-        }
-
-        self.unprotect_with_id(g.id, g.ptr);
-        g.defuse();
-    }
-
-    /// Consume [`Guard`] retiring its pointer.
-    ///
-    /// A pointer can ONLY be retired if it is guaranteed that it is no longer reacheable by
-    /// any other thread. Which means that [`Local::protect`] should not be called
-    /// after [`Local::retire`].
-    pub fn retire(&self, g: Guard<T>) {
-        if !std::ptr::eq(self, g.local) {
-            // We retire the ptr and panic after to be signal
-            // a possible bug
-            g.local.retire(g);
-            panic!("Guard was not created by this local");
-        }
-
-        self.push_retire_head(g.ptr);
-        self.unprotect(g);
     }
 
     /// Allocates a [`RetireNode`] for `ptr` and atomically pushes it onto the
@@ -451,7 +441,7 @@ mod tests {
             ptr,
             "Slow should be protecting ptr"
         );
-        local.unprotect(g);
+        g.unprotect();
         assert!(
             local.get_slot(0).unwrap().is_null(),
             "Slot should not be protecting ptr anymore"
@@ -480,7 +470,7 @@ mod tests {
         assert_eq!(none_qty, 1);
 
         for g in guards.into_iter().flatten() {
-            local.unprotect(g);
+            g.unprotect();
         }
 
         local.finish();
@@ -511,7 +501,7 @@ mod tests {
         let local = hp.local().unwrap();
 
         let g = local.protect(ptr).unwrap();
-        local.retire(g);
+        g.retire();
 
         let mut v = Vec::with_capacity(16);
         hp.reclaim(&mut v);
@@ -534,7 +524,7 @@ mod tests {
         let g11 = local1.protect(ptr).unwrap();
 
         let g12 = local2.protect(ptr).unwrap();
-        local2.retire(g12);
+        g12.retire();
 
         assert!(
             local1.retire_head().is_null(),
@@ -554,7 +544,7 @@ mod tests {
         );
 
         // Now ptr is no long protected and should be reclaimed
-        local1.unprotect(g11);
+        g11.unprotect();
 
         hp.reclaim(&mut v);
         assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
@@ -586,9 +576,9 @@ mod tests {
         let local3 = hp.local().unwrap();
 
         // Simulate three retirements without active protections
-        local1.retire(local1.protect(ptr1).unwrap());
-        local2.retire(local2.protect(ptr2).unwrap());
-        local3.retire(local3.protect(ptr3).unwrap());
+        local1.protect(ptr1).unwrap().retire();
+        local2.protect(ptr2).unwrap().retire();
+        local3.protect(ptr3).unwrap().retire();
 
         local1.finish();
         local2.finish();
@@ -611,9 +601,9 @@ mod tests {
         // Put both into the retired list
         let g11 = local.protect(ptr1).unwrap();
         let g12 = local.protect(ptr1).unwrap();
-        local.retire(g12);
+        g12.retire();
         let g2 = local.protect(ptr2).unwrap();
-        local.retire(g2);
+        g2.retire();
 
         // Only ptr2 should be reclaimed because ptr1 is still in Hazard Array
         let mut v = Vec::new();
@@ -621,7 +611,7 @@ mod tests {
         assert_eq!(v.len(), 1, "Only one pointer should have been reclaimed");
         assert_eq!(v[0], ptr2, "Only ptr2 is not protected");
 
-        local.retire(g11);
+        g11.retire();
         local.finish();
 
         let mut v = vec![];
@@ -647,7 +637,7 @@ mod tests {
                     protect_barrier.wait();
                     wait_asserts_barrier.wait();
 
-                    local.unprotect(g);
+                    g.unprotect();
                     local.finish();
                 });
             }
@@ -693,7 +683,7 @@ mod tests {
                     let local = hp.local().unwrap();
                     for ptr in ptrs {
                         if let Some(g) = local.protect(ptr) {
-                            local.retire(g);
+                            g.retire();
                             retired_qty.fetch_add(1, Ordering::Relaxed);
                         }
                     }
@@ -751,14 +741,14 @@ mod tests {
                 let g = local.protect(ptr.ptr()).unwrap();
                 barrier1.wait();
                 barrier2.wait();
-                local.unprotect(g);
+                g.unprotect();
                 local.finish();
             });
 
             scope.spawn(|| {
                 let local = hp.local().unwrap();
                 let g = local.protect(ptr.ptr()).unwrap();
-                local.retire(g);
+                g.retire();
                 local.finish();
                 barrier1.wait();
 
@@ -807,7 +797,7 @@ mod tests {
             let local = hp.local().unwrap();
             for _ in 0..16 {
                 let g = local.protect(ptr).unwrap();
-                local.unprotect(g);
+                g.unprotect();
             }
             local.finish();
         }
@@ -854,9 +844,9 @@ mod tests {
 
         let local = hp.local().unwrap();
         let g1 = local.protect(ptr).unwrap();
-        local.retire(g1);
+        g1.retire();
         let g2 = local.protect(ptr).unwrap();
-        local.retire(g2);
+        g2.retire();
 
         let mut v = vec![];
         hp.reclaim(&mut v);
@@ -868,28 +858,47 @@ mod tests {
     }
 
     #[test]
-    fn panic_when_guard_consumed_by_wrong_local() {
+    fn protect_null_pointer() {
+        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+        let local = hp.local().unwrap();
+
+        assert!(
+            local.protect(null_mut()).is_none(),
+            "Should return None for null pointers"
+        );
+
+        local.finish();
+    }
+
+    #[test]
+    fn empty_slots_must_not_protect_any_pointer() {
+        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+        let local = hp.local().unwrap();
         let ptr = &mut 42u64 as *mut u64;
 
-        let hp = HazardPointers::<u64>::with_capacity(8, 8);
+        // No slot is protecting anything, so a non-null pointer that was
+        // never protected should be considered unprotected.
+        let mut reclaimed = Vec::new();
+        hp.reclaim(&mut reclaimed);
+        assert!(reclaimed.is_empty());
 
-        let local1 = hp.local().unwrap();
-        let local2 = hp.local().unwrap();
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            assert!(local1.get_slot(0).unwrap().is_null(), "Slot should be null");
-            let g1 = local1.protect(ptr).unwrap();
-            assert!(
-                !local1.get_slot(0).unwrap().is_null(),
-                "Slot should not be null"
-            );
-            local2.unprotect(g1);
-        }));
+        // Sanity: actually protecting and then retiring the pointer works.
+        let g = local.protect(ptr).unwrap();
+        g.retire();
+        let mut reclaimed = Vec::new();
+        hp.reclaim(&mut reclaimed);
+        assert_eq!(reclaimed.len(), 1);
+        assert_eq!(reclaimed[0], ptr);
 
-        // Even panicking, the ptr should be unprotected now
-        assert!(result.is_err(), "Should panic");
-        assert!(local1.get_slot(0).unwrap().is_null(), "Slot should be null");
+        local.finish();
+    }
 
-        local1.finish();
-        local2.finish();
+    #[test]
+    fn zero_locals_returns_none() {
+        let hp = HazardPointers::<u64>::with_capacity(0, 8);
+        assert!(
+            hp.local().is_none(),
+            "With zero locals, local() must return None"
+        );
     }
 }

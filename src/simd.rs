@@ -69,4 +69,54 @@ mod tests {
             Some(idx) if idx == buffer.len() - 1
         ));
     }
+
+    #[test]
+    fn position_of_any_bool_empty_buffer() {
+        let buffer: [bool; 0] = [];
+        assert!(position_of_any_bool(&buffer, false).is_none());
+        assert!(position_of_any_bool(&buffer, true).is_none());
+    }
+
+    #[test]
+    fn position_of_any_bool_scalar_tail() {
+        // Length that spans two SIMD chunks plus a scalar tail.
+        let mut buffer = [false; 37];
+        buffer[16] = true;
+        buffer[36] = true;
+
+        assert_eq!(position_of_any_bool(&buffer, true), Some(16));
+
+        buffer[16] = false;
+        assert_eq!(position_of_any_bool(&buffer, true), Some(36));
+
+        buffer[36] = false;
+        assert!(position_of_any_bool(&buffer, true).is_none());
+    }
+
+    #[test]
+    fn position_of_any_bool_not_found() {
+        let buffer = [false; 64];
+        assert!(position_of_any_bool(&buffer, true).is_none());
+        assert_eq!(position_of_any_bool(&buffer, false), Some(0));
+
+        let buffer = [true; 64];
+        assert!(position_of_any_bool(&buffer, false).is_none());
+        assert_eq!(position_of_any_bool(&buffer, true), Some(0));
+    }
+
+    #[test]
+    fn position_of_any_bool_various_sizes() {
+        for len in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65] {
+            let mut buffer = vec![false; len];
+            for target in 0..len {
+                buffer[target] = true;
+                assert_eq!(
+                    position_of_any_bool(&buffer, true),
+                    Some(target),
+                    "Failed at len={len}, target={target}"
+                );
+                buffer[target] = false;
+            }
+        }
+    }
 }
