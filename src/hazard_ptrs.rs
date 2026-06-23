@@ -667,7 +667,7 @@ mod tests {
         let hp = HazardPointers::<u64>::with_capacity(8, 8);
 
         let qty_threads = 2; //TODO Increase to 12
-        let items_per_thread = 100;
+        let items_per_thread = 100u64;
         let barrier = Barrier::new(qty_threads);
 
         let retired_qty = AtomicUsize::new(0);
@@ -676,7 +676,7 @@ mod tests {
             for _ in 0..qty_threads {
                 scope.spawn(|| {
                     let ptrs = (0..items_per_thread)
-                        .map(|i| Box::leak(Box::new(i as u64)) as *mut u64)
+                        .map(|i| std::ptr::from_mut::<u64>(Box::leak(Box::new(i as u64))))
                         .collect::<Vec<_>>();
 
                     // Sync start to increase contention
@@ -727,7 +727,7 @@ mod tests {
         // Thread A is reading/protecting a value,
         // while Thread B is trying to retire it.
 
-        let ptr = ThreadSafePtr(&mut 42u64 as *mut u64);
+        let ptr = ThreadSafePtr(std::ptr::from_mut::<u64>(&mut 42u64));
 
         // thread 1: g is protected
         // thread 2: g is protected and retired
