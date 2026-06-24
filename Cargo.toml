@@ -16,6 +16,13 @@ loom = "0.7"
 # `loom` is enabled via `--cfg loom` (RUSTFLAGS) for the `test-loom` recipe.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
+[profile.bench]
+debug = true
+
 [[bench]]
 name = "simd"
+harness = false
+
+[[bench]]
+name = "hazard_ptrs"
 harness = false

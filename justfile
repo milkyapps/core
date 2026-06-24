@@ -16,3 +16,6 @@ test-loom $LOOM_LOG="trace":
     LOOM_CHECKPOINT_INTERVAL=1000 \
     LOOM_LOG=trace \
     cargo test --tests
+
+flamegraph *ARGS:
+    sudo cargo flamegraph --bench hazard_ptrs {{ARGS}}
