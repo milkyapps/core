@@ -7,7 +7,7 @@
 //! captured samples and shows up clearly in the flamegraph.
 
 use micromeasure::{NoContext, Throughput, benchmark_main, black_box};
-use milkyapps_core::hazard_ptrs::HazardPointers;
+use milkyapps_core::smr::hazard_ptrs::HazardPointers;
 
 /// Tight-loop of `protect` followed by `unprotect` on a single pointer.
 fn protect_unprotect_cycle(_ctx: &mut NoContext, chunk_size: usize, _chunk_num: usize) {
@@ -41,7 +41,7 @@ fn retire_cycle(_ctx: &mut NoContext, chunk_size: usize, _chunk_num: usize) {
 
     for _ in 0..chunk_size {
         let guard = local.protect(ptr).unwrap();
-        guard.retire();
+        let _ = guard.retire();
     }
 
     // The retire nodes were all built around the same (now unprotected) `ptr`,

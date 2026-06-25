@@ -3,10 +3,12 @@
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
 
-/// Hazard Pointers module
-pub mod hazard_ptrs;
+/// Allocators
+pub mod allocators;
 /// SIMD helper functions
 pub mod simd;
+/// Safe Memory Reclamation
+pub mod smr;
 /// Concurrency primitives
 pub(crate) mod sync;
 /// Thread primitives

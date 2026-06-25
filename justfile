@@ -7,7 +7,7 @@ ci RUN_LOOM="false":
     cargo bench
     cargo doc
 
-test-loom $LOOM_LOG="trace":
+test-loom $LOOM_LOG="trace" filter="":
     RUSTFLAGS="--cfg loom" \
     LOOM_MAX_PREEMPTIONS=2 \
     LOOM_MAX_BRANCHES=100000 \
@@ -15,7 +15,7 @@ test-loom $LOOM_LOG="trace":
     LOOM_MAX_DURATION=30 \
     LOOM_CHECKPOINT_INTERVAL=1000 \
     LOOM_LOG=trace \
-    cargo test --tests
+    cargo test --tests -- {{filter}}
 
 flamegraph *ARGS:
     sudo cargo flamegraph --bench hazard_ptrs {{ARGS}}
