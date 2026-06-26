@@ -89,8 +89,11 @@ impl Freelist {
         }
     }
 
-    /// Push a memory buffer back to the freelist
-    pub fn push(&self, ptr: *mut ()) -> bool {
+    /// Buffer will go back to the free list if the allocated memory is smaller
+    /// than the threshold. If bigger, buffer will be retired.
+    ///
+    /// When the ammount of memory retired pass the threshold, memory will be reclaimed and deallocated.
+    pub fn dealloc(&self, ptr: *mut ()) -> bool {
         if ptr.is_null() {
             false
         } else {
@@ -124,8 +127,8 @@ impl Freelist {
 
                 loop {
                     // SAFETY: ptr is not shared we can safely deref_mut
-                    let ptr = unsafe { &mut *(ptr.cast::<IntrusiveNode>()) };
-                    ptr.next.store(head, Ordering::Release);
+                    let ptr = ptr.cast::<IntrusiveNode>();
+                    unsafe { (*ptr).next.store(head, Ordering::Release) };
 
                     match self
                         .head
@@ -142,9 +145,9 @@ impl Freelist {
         }
     }
 
-    /// Returns an available memory buffer, or allocates one using
-    /// the default allocator.
-    pub fn pop(&self) -> Option<*mut ()> {
+    /// Will pop a buffer from the list. If none exist, a buffer
+    /// will be allocated from the global allocator.
+    pub fn alloc(&self) -> Option<*mut ()> {
         let local = self.hp.local()?;
         let mut head = self.head.load(Ordering::Acquire);
         loop {
@@ -198,7 +201,7 @@ impl Freelist {
 
 #[cfg(test)]
 mod tests {
-    use std::alloc::{Layout, dealloc};
+    use std::alloc::Layout;
 
     use crate::{allocators::freelist::Freelist, sync::model};
 
@@ -211,24 +214,149 @@ mod tests {
     }
 
     #[test]
-    fn pop_empty() {
+    fn alloc_dealloc() {
         model(|| {
             let layout = Layout::from_size_align(8, 8).unwrap();
             let s = Freelist::new(layout).unwrap();
-            let ptr = s.pop().unwrap();
-
-            // We need to dealloc so miri does not complain of a leak
-            unsafe { dealloc(ptr.cast::<u8>(), *s.layout()) };
+            let ptr = s.alloc().unwrap();
+            s.dealloc(ptr);
         });
     }
 
     #[test]
-    fn pop_push() {
+    fn freelist_is_send_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<Freelist>();
+        assert_sync::<Freelist>();
+    }
+
+    #[test]
+    fn alloc_dealloc_recycles_same_buffer() {
+        let layout = Layout::from_size_align(8, 8).unwrap();
+        let s = Freelist::new(layout).unwrap();
+
+        let p0 = s.alloc().unwrap();
+        s.dealloc(p0);
+
+        let p1 = s.alloc().unwrap();
+        s.dealloc(p1);
+
+        assert_eq!(p0, p1, "pop must recycle the buffer that was just pushed");
+    }
+
+    /// Reproducer for the ABA bug in `alloc`'s pop path.
+    ///
+    /// `alloc` loads `head`, protects it, reloads `head`, and only if the value
+    /// is unchanged does it read `head.next` and `compare_exchange(head -> next)`.
+    /// The reload only checks the *value* of `head`, not that the node is the
+    /// same node. Because buffers are recycled (popped and pushed back), another
+    /// thread can pop `head = A`, pop `A.next = B`, then push `A` back so that
+    /// `head` is `A` again — but `A.next` is now different. The victim's CAS
+    /// then succeeds (head == A again) and installs a `next` that is no longer
+    /// in the freelist, corrupting the list (in the worst case into a self-loop).
+    ///
+    /// This test is `#[ignore]`d so it never breaks the normal suite. Run it
+    /// under loom (which explores the interleaving deterministically) to see it
+    /// fail and prove the bug. It fails even with the project's default
+    /// `LOOM_MAX_PREEMPTIONS=2`:
+    ///
+    ///     RUSTFLAGS="--cfg loom" LOOM_MAX_PREEMPTIONS=2 \
+    ///         cargo test --lib alloc_aba_corrupts_freelist -- --ignored
+    ///
+    /// See BUGS.TXT for the full analysis.
+    #[test]
+    #[ignore]
+    fn alloc_aba_corrupts_freelist() {
         model(|| {
             let layout = Layout::from_size_align(8, 8).unwrap();
             let s = Freelist::new(layout).unwrap();
-            let ptr = s.pop().unwrap();
-            s.push(ptr);
+
+            // Prepopulate the freelist with exactly two buffers so that
+            // head = A -> B -> null.
+            let a = s.alloc().unwrap(); // fresh A
+            let b = s.alloc().unwrap(); // fresh B
+            s.dealloc(b); // push B:  head = B
+            s.dealloc(a); // push A:  head = A -> B
+
+            // T2: pop A, pop B, push A, push B  (a full recycle of both nodes).
+            // T1: a single pop — the ABA victim.
+            crate::thread::scope(|scope| {
+                scope.spawn(|| {
+                    let q1 = s.alloc().unwrap(); // pop A
+                    let q2 = s.alloc().unwrap(); // pop B
+                    s.dealloc(q1); // push A (head -> A)
+                    s.dealloc(q2); // push B
+                });
+                scope.spawn(|| {
+                    let _p = s.alloc().unwrap(); // victim pop
+                });
+            });
+
+            // Invariant for a correct freelist: every `alloc` returns a buffer
+            // that is either a distinct node popped from the list or a freshly
+            // allocated one. The same address can never be handed out twice
+            // without an intervening `dealloc`. In the ABA schedule the list
+            // ends in a self-loop on one node, so repeated `alloc` returns the
+            // same pointer over and over.
+            let mut seen: Vec<*mut ()> = Vec::new();
+            for _ in 0..3 {
+                if let Some(p) = s.alloc() {
+                    seen.push(p);
+                }
+            }
+
+            let mut duplicate = false;
+            for i in 0..seen.len() {
+                for j in (i + 1)..seen.len() {
+                    if seen[i] == seen[j] {
+                        duplicate = true;
+                    }
+                }
+            }
+
+            // `forget` the freelist *before* asserting: in the ABA schedule the
+            // list is a self-loop, so `Drop` would walk it forever (use-after-
+            // free on the first deallocated node). Forgetting keeps the failure
+            // signal clean.
+            std::mem::forget(s);
+
+            assert!(
+                !duplicate,
+                "freelist handed out the same buffer twice without an intervening \
+                 dealloc (ABA self-loop): {seen:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn concurrent_stress() {
+        const THREADS: usize = 4;
+        const ITERS: usize = 200;
+
+        let layout = Layout::from_size_align(8, 8).unwrap();
+        let s = Freelist::new(layout).unwrap();
+
+        crate::thread::scope(|scope| {
+            for _ in 0..THREADS {
+                scope.spawn(|| {
+                    let mut held = Vec::new();
+                    for _ in 0..ITERS {
+                        if let Some(p) = s.alloc() {
+                            held.push(p);
+                        }
+
+                        if held.len() > 8 {
+                            let p = held.pop().unwrap();
+                            s.dealloc(p);
+                        }
+                    }
+
+                    for p in held {
+                        s.dealloc(p);
+                    }
+                });
+            }
         });
     }
 }

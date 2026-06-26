@@ -439,6 +439,14 @@ mod tests {
     };
 
     #[test]
+    fn hazard_pointers_is_send_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<HazardPointers<u64>>();
+        assert_sync::<HazardPointers<u64>>();
+    }
+
+    #[test]
     fn protect_unprotect_must_use_slots() {
         model(|| {
             let ptr = &mut 2u64 as *mut u64;
