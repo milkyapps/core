@@ -1,13 +1,13 @@
-use crate::smr::hazard_ptrs::HazardPointers;
 use crate::sync::AtomicPtr;
+use crate::{ptr::TaggedPtr, smr::hazard_ptrs::HazardPointers};
 use std::{
     alloc::{Layout, LayoutError, dealloc, handle_alloc_error},
     ptr::null_mut,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-struct IntrusiveNode {
-    next: AtomicPtr<IntrusiveNode>,
+struct Node {
+    next: TaggedPtr<Node>,
 }
 
 /// Freelist is a lockfree stack of memory buffers.
@@ -19,27 +19,28 @@ struct IntrusiveNode {
 ///
 /// All buffers are deallocated on drop.
 pub struct Freelist {
-    head: AtomicPtr<IntrusiveNode>,
+    head: TaggedPtr<Node>,
     layout: Layout,
+    offset: usize,
     allocated: AtomicUsize,
     retired: AtomicUsize,
-    max_allocated: usize,
-    hp: HazardPointers<IntrusiveNode>,
+    threshold: usize,
+    hp: HazardPointers<Node>,
 }
 
 impl Drop for Freelist {
     fn drop(&mut self) {
-        self.deallocate_retired();
+        // self.deallocate_retired();
 
-        let mut ptr = self.head.load(Ordering::Acquire);
-        while !ptr.is_null() {
-            // SAFETY: inside drop we are sure nobody has access to
-            let current = unsafe { &*ptr };
-            let next = current.next.load(Ordering::Relaxed);
+        // let mut ptr = self.head.load(Ordering::Acquire);
+        // while !ptr.is_null() {
+        //     // SAFETY: inside drop we are sure nobody has access to
+        //     let current = unsafe { &*ptr };
+        //     let next = current.next.load(Ordering::Relaxed);
 
-            unsafe { dealloc(ptr.cast::<u8>(), self.layout) };
-            ptr = next;
-        }
+        //     unsafe { dealloc(ptr.cast::<u8>(), self.layout) };
+        //     ptr = next;
+        // }
     }
 }
 
@@ -51,26 +52,14 @@ impl Freelist {
     /// Function fails if cannot find a common layout for the requested layout
     /// and the layout for the `IntrusiveNode` type.
     pub fn new(layout: Layout) -> Result<Freelist, LayoutError> {
-        let node_size = std::mem::size_of::<IntrusiveNode>();
-        let node_align = std::mem::align_of::<IntrusiveNode>();
-
-        let align = layout.align();
-        let align = if align.is_multiple_of(node_align) {
-            align
-        } else if node_align.is_multiple_of(align) {
-            node_align
-        } else {
-            align * node_align
-        };
-
-        let layout = Layout::from_size_align(layout.size().max(node_size), align)?;
-        let max_allocated = layout.size() * 1024;
+        let (layout, offset) = Layout::new::<Node>().extend(layout)?;
         Ok(Freelist {
-            head: AtomicPtr::new(null_mut()),
+            head: TaggedPtr::new(null_mut(), 0),
             layout,
+            offset,
             allocated: AtomicUsize::new(0),
             retired: AtomicUsize::new(0),
-            max_allocated,
+            threshold: 1024,
             hp: HazardPointers::with_capacity(1024, 16),
         })
     }
@@ -93,107 +82,88 @@ impl Freelist {
     /// than the threshold. If bigger, buffer will be retired.
     ///
     /// When the ammount of memory retired pass the threshold, memory will be reclaimed and deallocated.
-    pub fn dealloc(&self, ptr: *mut ()) -> bool {
+    pub fn dealloc(&self, ptr: TaggedPtr<()>) -> bool {
         if ptr.is_null() {
             false
         } else {
-            let Some(local) = self.hp.local() else {
-                return false;
-            };
+            let ptr = unsafe { ptr.byte_sub::<Node>(self.offset) };
+            let (_, ptr_inner) = ptr.load();
 
-            let allocated = self.allocated.load(Ordering::Relaxed);
-            if allocated > self.max_allocated {
-                let Some(g) = local.protect(ptr.cast::<IntrusiveNode>()) else {
-                    local.finish();
-                    return false;
-                };
+            let local = self.hp.local().unwrap();
 
-                let _ = g.retire();
-                local.finish();
-                self.allocated
-                    .fetch_sub(self.layout().size(), Ordering::Relaxed);
+            loop {
+                let (head, head_inner) = self.head.load();
+                let g = local.protect(head).unwrap();
+                if head == self.head.load().0 {
+                    if head.is_null() {
+                        ptr.store(0);
+                    } else {
+                        // SAFETY: load-protect-check cycle complete. head is safe to be deref here
+                        let (_, next) = unsafe { (*head).next.load() };
+                        ptr.store(next);
+                    }
 
-                // If we have too many retired, deallocate them
-                let old_retired = self
-                    .retired
-                    .fetch_add(self.layout().size(), Ordering::Relaxed);
-                if old_retired > self.max_allocated {
-                    self.deallocate_retired();
-                }
-
-                true
-            } else {
-                let mut head = self.head.load(Ordering::Acquire);
-
-                loop {
-                    // SAFETY: ptr is not shared we can safely deref_mut
-                    let ptr = ptr.cast::<IntrusiveNode>();
-                    unsafe { (*ptr).next.store(head, Ordering::Release) };
-
-                    match self
-                        .head
-                        .compare_exchange(head, ptr, Ordering::AcqRel, Ordering::Acquire)
-                    {
-                        Ok(_) => {
+                    match self.head.compare_exchange_weak(
+                        head_inner,
+                        ptr_inner,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok((_, _, _)) => {
+                            g.unprotect();
                             local.finish();
-                            break true;
+                            return true;
                         }
-                        Err(new_head) => head = new_head,
+                        Err(_) => {}
                     }
                 }
+
+                g.unprotect();
             }
         }
     }
 
     /// Will pop a buffer from the list. If none exist, a buffer
     /// will be allocated from the global allocator.
-    pub fn alloc(&self) -> Option<*mut ()> {
+    pub fn alloc(&self) -> Option<TaggedPtr<()>> {
         let local = self.hp.local()?;
-        let mut head = self.head.load(Ordering::Acquire);
         loop {
+            let (mut head, head_inner) = self.head.load();
             if head.is_null() {
                 local.finish();
-
                 // SAFETY: We check ptr is null before deref it
-                let node = unsafe { std::alloc::alloc(self.layout).cast::<()>() };
-
+                let node = unsafe { std::alloc::alloc(self.layout).cast::<Node>() };
                 if node.is_null() {
                     handle_alloc_error(self.layout);
                 }
-
-                self.allocated
-                    .fetch_add(self.layout.size(), Ordering::Relaxed);
-
-                return Some(node);
-            }
-
-            let Some(g) = local.protect(head) else {
-                local.finish();
-                return None;
-            };
-            let new_head = self.head.load(Ordering::Acquire);
-            if head == new_head {
-                // SAFETY: after load-protect-check we can defer head
-                let next = unsafe { (*head).next.load(Ordering::Acquire) };
-                match self.head.compare_exchange_weak(
-                    head,
-                    next,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                ) {
-                    Ok(head) => {
-                        g.unprotect();
-                        local.finish();
-                        return Some(head.cast::<()>());
-                    }
-                    Err(new_head) => {
-                        g.unprotect();
-                        head = new_head;
-                    }
-                }
+                self.allocated.fetch_add(1, Ordering::Relaxed);
+                let ptr = unsafe { node.byte_add(self.offset).cast::<()>() };
+                return Some(TaggedPtr::new(ptr, 0));
             } else {
-                g.unprotect();
-                head = new_head;
+                let g = local.protect(head).unwrap();
+                if head == self.head.load().0 {
+                    // SAFETY: head is load-protect-check so it is safe to deref
+                    let (_, next_inner) = unsafe { (*head).next.load() };
+                    match self.head.compare_exchange_weak(
+                        head_inner,
+                        next_inner,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok((_, _, new_head_inner)) => {
+                            g.unprotect();
+                            local.finish();
+                            let ptr = TaggedPtr::<()>::from_inner(new_head_inner);
+                            ptr.incr_tag();
+                            return Some(unsafe { ptr.byte_add(self.offset) });
+                        }
+                        Err(_) => {
+                            g.unprotect();
+                        }
+                    }
+                } else {
+                    g.unprotect();
+                }
             }
         }
     }
@@ -218,8 +188,12 @@ mod tests {
         model(|| {
             let layout = Layout::from_size_align(8, 8).unwrap();
             let s = Freelist::new(layout).unwrap();
-            let ptr = s.alloc().unwrap();
-            s.dealloc(ptr);
+
+            assert!(s.head.load().0.is_null());
+            let buffer = s.alloc().unwrap();
+            assert!(s.head.load().0.is_null());
+            s.dealloc(buffer);
+            assert!(!s.head.load().0.is_null());
         });
     }
 
@@ -236,13 +210,25 @@ mod tests {
         let layout = Layout::from_size_align(8, 8).unwrap();
         let s = Freelist::new(layout).unwrap();
 
+        assert!(s.head.load().0.is_null());
         let p0 = s.alloc().unwrap();
+        let p0_ptr = p0.load().0;
+
+        assert!(s.head.load().0.is_null());
         s.dealloc(p0);
+        assert!(!s.head.load().0.is_null());
 
         let p1 = s.alloc().unwrap();
-        s.dealloc(p1);
+        let p1_ptr = p1.load().0;
+        assert!(s.head.load().0.is_null());
 
-        assert_eq!(p0, p1, "pop must recycle the buffer that was just pushed");
+        s.dealloc(p1);
+        assert!(!s.head.load().0.is_null());
+
+        assert_eq!(
+            p0_ptr, p1_ptr,
+            "pop must recycle the buffer that was just pushed"
+        );
     }
 
     /// Reproducer for the ABA bug in `alloc`'s pop path.
@@ -266,7 +252,6 @@ mod tests {
     ///
     /// See BUGS.TXT for the full analysis.
     #[test]
-    #[ignore]
     fn alloc_aba_corrupts_freelist() {
         model(|| {
             let layout = Layout::from_size_align(8, 8).unwrap();
@@ -299,7 +284,7 @@ mod tests {
             // without an intervening `dealloc`. In the ABA schedule the list
             // ends in a self-loop on one node, so repeated `alloc` returns the
             // same pointer over and over.
-            let mut seen: Vec<*mut ()> = Vec::new();
+            let mut seen = Vec::new();
             for _ in 0..3 {
                 if let Some(p) = s.alloc() {
                     seen.push(p);
@@ -309,7 +294,7 @@ mod tests {
             let mut duplicate = false;
             for i in 0..seen.len() {
                 for j in (i + 1)..seen.len() {
-                    if seen[i] == seen[j] {
+                    if seen[i].load().0 == seen[j].load().0 {
                         duplicate = true;
                     }
                 }

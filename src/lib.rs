@@ -5,6 +5,8 @@
 
 /// Allocators
 pub mod allocators;
+// Pointer module
+pub(crate) mod ptr;
 /// SIMD helper functions
 pub mod simd;
 /// Safe Memory Reclamation
