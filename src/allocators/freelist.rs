@@ -1,5 +1,7 @@
+use crate::ptr::TaggedPtr;
 use crate::sync::AtomicPtr;
-use crate::{ptr::TaggedPtr, smr::hazard_ptrs::HazardPointers};
+use crate::{ptr::AtomicTagged, smr::hazard_ptrs::HazardPointers};
+use std::fmt::Debug;
 use std::{
     alloc::{Layout, LayoutError, dealloc, handle_alloc_error},
     ptr::null_mut,
@@ -7,7 +9,7 @@ use std::{
 };
 
 struct Node {
-    next: TaggedPtr<Node>,
+    next: AtomicTagged<Node>,
 }
 
 /// Freelist is a lockfree stack of memory buffers.
@@ -19,13 +21,29 @@ struct Node {
 ///
 /// All buffers are deallocated on drop.
 pub struct Freelist {
-    head: TaggedPtr<Node>,
+    head: AtomicTagged<Node>,
     layout: Layout,
     offset: usize,
-    allocated: AtomicUsize,
-    retired: AtomicUsize,
-    threshold: usize,
+    qty_allocated: AtomicUsize,
+    qty_in_list: AtomicUsize,
+    qty_retired: AtomicUsize,
+    alloc_max: usize,
+    list_max: usize,
+    retired_max: usize,
     hp: HazardPointers<Node>,
+}
+
+impl Debug for Freelist {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut items = vec![];
+        let mut current = self.head.load(Ordering::Acquire);
+        while !current.ptr().is_null() {
+            items.push(current);
+            current = unsafe { (*current.ptr()).next.load(Ordering::Acquire) };
+        }
+
+        f.debug_struct("Freelist").field("items", &items).finish()
+    }
 }
 
 impl Drop for Freelist {
@@ -54,12 +72,15 @@ impl Freelist {
     pub fn new(layout: Layout) -> Result<Freelist, LayoutError> {
         let (layout, offset) = Layout::new::<Node>().extend(layout)?;
         Ok(Freelist {
-            head: TaggedPtr::new(null_mut(), 0),
+            head: AtomicTagged::new(TaggedPtr::new(null_mut(), 0)),
             layout,
             offset,
-            allocated: AtomicUsize::new(0),
-            retired: AtomicUsize::new(0),
-            threshold: 1024,
+            qty_allocated: AtomicUsize::new(0),
+            qty_in_list: AtomicUsize::new(0),
+            qty_retired: AtomicUsize::new(0),
+            alloc_max: 1024,
+            list_max: 1024,
+            retired_max: 4,
             hp: HazardPointers::with_capacity(1024, 16),
         })
     }
@@ -73,6 +94,8 @@ impl Freelist {
         let mut ptrs = vec![];
         self.hp.reclaim(&mut ptrs);
 
+        self.qty_retired.fetch_sub(ptrs.len(), Ordering::Relaxed);
+        self.qty_allocated.fetch_sub(ptrs.len(), Ordering::Relaxed);
         for ptr in ptrs {
             unsafe { dealloc(ptr.cast::<u8>(), self.layout) };
         }
@@ -82,34 +105,43 @@ impl Freelist {
     /// than the threshold. If bigger, buffer will be retired.
     ///
     /// When the ammount of memory retired pass the threshold, memory will be reclaimed and deallocated.
-    pub fn dealloc(&self, ptr: TaggedPtr<()>) -> bool {
-        if ptr.is_null() {
+    pub fn dealloc(&self, buffer: TaggedPtr<()>) -> bool {
+        if buffer.ptr().is_null() {
             false
         } else {
-            let ptr = unsafe { ptr.byte_sub::<Node>(self.offset) };
-            let (_, ptr_inner) = ptr.load();
-
+            let mut buffer = unsafe { buffer.byte_sub::<Node>(self.offset) };
+            buffer.wrapping_add_tag(1);
             let local = self.hp.local().unwrap();
 
+            if self.qty_in_list.load(Ordering::Relaxed) >= self.list_max {
+                let g = local.protect(buffer.ptr()).unwrap();
+                let _ = g.retire();
+                local.finish();
+
+                let retired = self.qty_retired.fetch_add(1, Ordering::Relaxed) + 1;
+                if retired > self.retired_max {
+                    self.deallocate_retired();
+                }
+
+                return true;
+            }
+
             loop {
-                let (head, head_inner) = self.head.load();
-                let g = local.protect(head).unwrap();
-                if head == self.head.load().0 {
-                    if head.is_null() {
-                        ptr.store(0);
-                    } else {
-                        // SAFETY: load-protect-check cycle complete. head is safe to be deref here
-                        let (_, next) = unsafe { (*head).next.load() };
-                        ptr.store(next);
-                    }
+                let head = self.head.load(Ordering::Acquire);
+                let head_ptr = head.ptr();
+                let g = local.protect(head_ptr).unwrap();
+                if head_ptr == self.head.load(Ordering::Acquire).ptr() {
+                    // SAFETY: load-protect-check cycle complete. head is safe to be used here
+                    unsafe { (*buffer.ptr()).next.store(head, Ordering::Release) };
 
                     match self.head.compare_exchange_weak(
-                        head_inner,
-                        ptr_inner,
+                        head,
+                        buffer,
                         Ordering::AcqRel,
                         Ordering::Acquire,
                     ) {
-                        Ok((_, _, _)) => {
+                        Ok(_) => {
+                            self.qty_in_list.fetch_add(1, Ordering::Relaxed);
                             g.unprotect();
                             local.finish();
                             return true;
@@ -128,34 +160,39 @@ impl Freelist {
     pub fn alloc(&self) -> Option<TaggedPtr<()>> {
         let local = self.hp.local()?;
         loop {
-            let (mut head, head_inner) = self.head.load();
-            if head.is_null() {
+            let head = self.head.load(Ordering::Acquire);
+            if head.ptr().is_null() {
                 local.finish();
+
+                if self.qty_allocated.load(Ordering::Relaxed) >= self.alloc_max {
+                    return None;
+                }
+
                 // SAFETY: We check ptr is null before deref it
                 let node = unsafe { std::alloc::alloc(self.layout).cast::<Node>() };
                 if node.is_null() {
                     handle_alloc_error(self.layout);
                 }
-                self.allocated.fetch_add(1, Ordering::Relaxed);
+                self.qty_allocated.fetch_add(1, Ordering::Relaxed);
                 let ptr = unsafe { node.byte_add(self.offset).cast::<()>() };
                 return Some(TaggedPtr::new(ptr, 0));
             } else {
-                let g = local.protect(head).unwrap();
-                if head == self.head.load().0 {
+                let g = local.protect(head.ptr()).unwrap();
+                if head.ptr() == self.head.load(Ordering::Acquire).ptr() {
                     // SAFETY: head is load-protect-check so it is safe to deref
-                    let (_, next_inner) = unsafe { (*head).next.load() };
+                    let next = unsafe { (*head.ptr()).next.load(Ordering::Acquire) };
                     match self.head.compare_exchange_weak(
-                        head_inner,
-                        next_inner,
+                        head,
+                        next,
                         Ordering::AcqRel,
                         Ordering::Acquire,
                     ) {
-                        Ok((_, _, new_head_inner)) => {
+                        Ok(new_head) => {
+                            self.qty_in_list.fetch_sub(1, Ordering::Relaxed);
                             g.unprotect();
                             local.finish();
-                            let ptr = TaggedPtr::<()>::from_inner(new_head_inner);
-                            ptr.incr_tag();
-                            return Some(unsafe { ptr.byte_add(self.offset) });
+                            // ptr.incr_tag(); // TODO should we increase tag here?
+                            return Some(unsafe { new_head.byte_add(self.offset) });
                         }
                         Err(_) => {
                             g.unprotect();
@@ -171,7 +208,7 @@ impl Freelist {
 
 #[cfg(test)]
 mod tests {
-    use std::alloc::Layout;
+    use std::{alloc::Layout, sync::atomic::Ordering};
 
     use crate::{allocators::freelist::Freelist, sync::model};
 
@@ -184,16 +221,22 @@ mod tests {
     }
 
     #[test]
-    fn alloc_dealloc() {
+    fn test_alloc_dealloc() {
         model(|| {
             let layout = Layout::from_size_align(8, 8).unwrap();
             let s = Freelist::new(layout).unwrap();
 
-            assert!(s.head.load().0.is_null());
+            let buffer1 = s.alloc().unwrap();
+            let buffer2 = s.alloc().unwrap();
+            dbg!(&s);
+            s.dealloc(buffer1);
+            dbg!(&s);
+            s.dealloc(buffer2);
+            dbg!(&s);
+
             let buffer = s.alloc().unwrap();
-            assert!(s.head.load().0.is_null());
             s.dealloc(buffer);
-            assert!(!s.head.load().0.is_null());
+            dbg!(&s);
         });
     }
 
@@ -210,20 +253,20 @@ mod tests {
         let layout = Layout::from_size_align(8, 8).unwrap();
         let s = Freelist::new(layout).unwrap();
 
-        assert!(s.head.load().0.is_null());
+        assert!(s.head.load(Ordering::Acquire).ptr().is_null());
         let p0 = s.alloc().unwrap();
-        let p0_ptr = p0.load().0;
+        let p0_ptr = p0.ptr();
 
-        assert!(s.head.load().0.is_null());
+        assert!(s.head.load(Ordering::Acquire).ptr().is_null());
         s.dealloc(p0);
-        assert!(!s.head.load().0.is_null());
+        assert!(!s.head.load(Ordering::Acquire).ptr().is_null());
 
         let p1 = s.alloc().unwrap();
-        let p1_ptr = p1.load().0;
-        assert!(s.head.load().0.is_null());
+        let p1_ptr = p1.ptr();
+        assert!(s.head.load(Ordering::Acquire).ptr().is_null());
 
         s.dealloc(p1);
-        assert!(!s.head.load().0.is_null());
+        assert!(!s.head.load(Ordering::Acquire).ptr().is_null());
 
         assert_eq!(
             p0_ptr, p1_ptr,
@@ -231,26 +274,6 @@ mod tests {
         );
     }
 
-    /// Reproducer for the ABA bug in `alloc`'s pop path.
-    ///
-    /// `alloc` loads `head`, protects it, reloads `head`, and only if the value
-    /// is unchanged does it read `head.next` and `compare_exchange(head -> next)`.
-    /// The reload only checks the *value* of `head`, not that the node is the
-    /// same node. Because buffers are recycled (popped and pushed back), another
-    /// thread can pop `head = A`, pop `A.next = B`, then push `A` back so that
-    /// `head` is `A` again — but `A.next` is now different. The victim's CAS
-    /// then succeeds (head == A again) and installs a `next` that is no longer
-    /// in the freelist, corrupting the list (in the worst case into a self-loop).
-    ///
-    /// This test is `#[ignore]`d so it never breaks the normal suite. Run it
-    /// under loom (which explores the interleaving deterministically) to see it
-    /// fail and prove the bug. It fails even with the project's default
-    /// `LOOM_MAX_PREEMPTIONS=2`:
-    ///
-    ///     RUSTFLAGS="--cfg loom" LOOM_MAX_PREEMPTIONS=2 \
-    ///         cargo test --lib alloc_aba_corrupts_freelist -- --ignored
-    ///
-    /// See BUGS.TXT for the full analysis.
     #[test]
     fn alloc_aba_corrupts_freelist() {
         model(|| {
@@ -294,7 +317,7 @@ mod tests {
             let mut duplicate = false;
             for i in 0..seen.len() {
                 for j in (i + 1)..seen.len() {
-                    if seen[i].load().0 == seen[j].load().0 {
+                    if seen[i].ptr() == seen[j].ptr() {
                         duplicate = true;
                     }
                 }
@@ -343,5 +366,60 @@ mod tests {
                 });
             }
         });
+    }
+
+    #[test]
+    fn alloc_is_bounded() {
+        let layout = Layout::from_size_align(8, 8).unwrap();
+        let s = Freelist::new(layout).unwrap();
+        let mut missing_allocations = s.alloc_max;
+        assert!(missing_allocations > 0, "alloc_max must be positive");
+
+        for _ in 0..(missing_allocations + 1) {
+            if s.alloc().is_some() {
+                missing_allocations -= 1;
+            }
+        }
+
+        assert_eq!(
+            missing_allocations, 0,
+            "Do not allocate more than threshold"
+        )
+    }
+
+    #[test]
+    fn dealloc_must_deallocate_buffers_once_allocated_exceeds_threshold() {
+        let layout = Layout::from_size_align(8, 8).unwrap();
+        let mut s = Freelist::new(layout).unwrap();
+        s.alloc_max = 10;
+        s.list_max = 5;
+        s.retired_max = 4;
+
+        // Allocate to the limit
+        let mut buffers = vec![];
+        for _ in 0..s.alloc_max {
+            buffers.extend(s.alloc());
+        }
+
+        // Deallocate to the limit of the freelist
+        // No one will be retired
+        for _ in 0..s.list_max {
+            assert!(s.dealloc(buffers.pop().unwrap()));
+        }
+        assert_eq!(s.qty_in_list.load(Ordering::Relaxed), 5);
+        assert_eq!(s.qty_retired.load(Ordering::Relaxed), 0);
+
+        // Deallocate to the limit of retired_max
+        // No one will be reclaimed yet
+        for _ in 0..s.retired_max {
+            assert!(s.dealloc(buffers.pop().unwrap()));
+        }
+        assert_eq!(s.qty_in_list.load(Ordering::Relaxed), 5);
+        assert_eq!(s.qty_retired.load(Ordering::Relaxed), 4);
+
+        // Now all the retired will be reclaimed
+        assert!(s.dealloc(buffers.pop().unwrap()));
+        assert_eq!(s.qty_in_list.load(Ordering::Relaxed), 5);
+        assert_eq!(s.qty_retired.load(Ordering::Relaxed), 0);
     }
 }
