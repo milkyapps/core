@@ -5,6 +5,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# Used by `src/allocators/multipool.rs`'s `multipool!` macro to paste
+# identifiers.
+paste = "1"
 
 [dev-dependencies]
 micromeasure = "0.6"

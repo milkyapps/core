@@ -112,3 +112,84 @@ where
 {
     f();
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::sync::{Barrier, atomic::AtomicUsize, model};
+    use std::sync::atomic::Ordering;
+
+    /// A barrier must be reusable across generations: N threads passing it
+    /// G times must all complete (loom flags a deadlock if the custom
+    /// barrier impl hangs).
+    #[test]
+    fn barrier_reusable_across_generations() {
+        model(|| {
+            const N: usize = 3;
+            const GENS: usize = 3;
+            let barrier = Barrier::new(N);
+            let phase = AtomicUsize::new(0);
+
+            crate::thread::scope(|scope| {
+                for _ in 0..N {
+                    scope.spawn(|| {
+                        for _ in 0..GENS {
+                            barrier.wait();
+                            phase.fetch_add(1, Ordering::SeqCst);
+                        }
+                    });
+                }
+            });
+
+            assert_eq!(
+                phase.load(Ordering::SeqCst),
+                N * GENS,
+                "all threads must complete all generations (no deadlock)"
+            );
+        });
+    }
+
+    /// No thread may pass the barrier before all N have arrived. Each thread
+    /// increments `before` *then* waits; after `wait` returns, `before` must
+    /// read N. A barrier that releases early would let a thread observe
+    /// `before < N` and panic.
+    #[test]
+    fn barrier_no_thread_passes_before_all_arrive() {
+        model(|| {
+            const N: usize = 3;
+            let barrier = Barrier::new(N);
+            let before = AtomicUsize::new(0);
+
+            crate::thread::scope(|scope| {
+                for _ in 0..N {
+                    scope.spawn(|| {
+                        before.fetch_add(1, Ordering::SeqCst);
+                        barrier.wait();
+                        assert_eq!(
+                            before.load(Ordering::SeqCst),
+                            N,
+                            "a thread passed the barrier before all threads arrived"
+                        );
+                    });
+                }
+            });
+        });
+    }
+
+    /// A barrier of size 1 is a no-op pass-through and must not deadlock.
+    #[test]
+    fn barrier_of_one_does_not_block() {
+        model(|| {
+            let barrier = Barrier::new(1);
+            let count = AtomicUsize::new(0);
+            crate::thread::scope(|scope| {
+                scope.spawn(|| {
+                    for _ in 0..4 {
+                        barrier.wait();
+                        count.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+            });
+            assert_eq!(count.load(Ordering::SeqCst), 4);
+        });
+    }
+}

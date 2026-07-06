@@ -17,8 +17,7 @@
 //! them. Naively freeing the memory immediately is unsound as another thread may
 //! be using the pointed memory, leading to a use-after-free.
 //!
-//! Hazard pointers solves this by "protecting"
-//! and "retiring" pointers, instead
+//! Hazard pointers solves this by "protecting" and "retiring" pointers, instead
 //! of immediately releasing them. In practice, this means that retired pointers
 //! go to a list and are only released when they are not protected anymore.
 //!
@@ -66,21 +65,22 @@ use crate::sync::{
 };
 use std::{panic, ptr::null_mut};
 
-/// A node in the singly-linked retirement list.
 #[derive(Debug)]
 struct RetireNode<T> {
-    /// Pointer to the next node in the retirement list.
     next: AtomicPtr<RetireNode<T>>,
-    /// The retired pointer awaiting reclamation.
     ptr: *mut T,
 }
 
-/// A guard guarding a protected pointer.
+/// A guard keeping a pointer protected.
 ///
-/// Dropping a guard without first consuming it via
-/// [`Guard::unprotect`] or [`Guard::retire`] is a programmer error:
-/// in debug builds the [`Drop`] implementation panics
-/// (a "drop bomb") to catch leaked protections early.
+/// While a `Guard` is alive, the pointer it holds cannot be reclaimed by
+/// [`HazardPointers::reclaim`]. Dispose of every guard explicitly with either
+/// [`Guard::unprotect`] (release the protection) or [`Guard::retire`]
+/// (release the protection *and* schedule the pointer for reclamation).
+///
+/// Dropping a live guard without consuming it is a programmer error: in debug
+/// builds the [`Drop`] implementation panics (a "drop bomb") to catch leaked
+/// protections early.
 pub struct Guard<'a, T> {
     /// Weak pointer to the Registry
     local: &'a Local<'a, T>,
@@ -110,7 +110,10 @@ impl<T> Drop for Guard<'_, T> {
 }
 
 impl<T> Guard<'_, T> {
-    /// Consume [`Guard`] unprotecting its pointer.
+    /// Releases the protection and consumes the guard.
+    ///
+    /// After this returns, the pointer is no longer kept alive and may be
+    /// reclaimed by a future [`HazardPointers::reclaim`].
     pub fn unprotect(mut self) {
         if !self.ptr.is_null() {
             self.local.unprotect_with_id(self.id, self.ptr);
@@ -118,11 +121,21 @@ impl<T> Guard<'_, T> {
         }
     }
 
-    /// Consume [`Guard`] retiring its pointer.
+    /// Releases the protection and schedules `ptr` for reclamation.
     ///
-    /// A pointer can ONLY be retired if it is guaranteed that it is no longer reacheable by
-    /// any other thread. Which means that [`Local::protect`] should not be called
-    /// after [`Guard::retire`].
+    /// The pointer becomes eligible for [`HazardPointers::reclaim`] as soon as
+    /// no other guard is protecting it.
+    ///
+    /// Returns `true` if the pointer was scheduled, or `false` if this guard
+    /// held a null pointer (a no-op).
+    ///
+    /// # Safety contract
+    ///
+    /// A pointer may ONLY be retired once it is guaranteed to be unreachable to
+    /// every other thread: after this call, [`Local::protect`] must not be
+    /// called on this pointer again. Retiring a pointer that another thread
+    /// can still reach lets [`HazardPointers::reclaim`] hand it back to the
+    /// caller while it is still in use — a use-after-free.
     #[must_use]
     pub fn retire(self) -> bool {
         if self.ptr.is_null() {
@@ -139,9 +152,11 @@ impl<T> Guard<'_, T> {
     }
 }
 
-/// Give access to protecting pointers. `Local` must be consumed
-/// by [`Local::finish`] to make it clear when all pointers are
-/// unprotected.
+/// A per-thread handle through which pointers are protected and retired.
+///
+/// At most one thread may use a `Local` at a time. A `Local` must be released
+/// with [`Local::finish`] when the thread is done with it; dropping a `Local`
+/// without finishing is a programmer error (debug builds panic).
 pub struct Local<'a, T> {
     drop_bomb: bool,
     hp: &'a HazardPointers<T>,
@@ -181,13 +196,23 @@ impl<T> Local<'_, T> {
         self.drop_bomb = false;
     }
 
-    /// Consumes `Local` and explicit unprotected all pointers as a fallback.
-    /// But the correct approach is to unprotect each pointer individually.
+    /// Releases this handle.
+    ///
+    /// Any pointers still protected through this handle are unprotected as a
+    /// fallback. The preferred pattern is to release each guard individually
+    /// with [`Guard::unprotect`] or [`Guard::retire`]; this call is the
+    /// safety net that makes sure nothing is left protected when the handle is
+    /// dropped.
     pub fn finish(mut self) {
         self.finish_by_ref();
     }
 
-    /// Protects `ptr` whilst its [`Guard`] is alive.
+    /// Publishes `ptr` so it cannot be reclaimed while the returned [`Guard`]
+    /// is alive.
+    ///
+    /// Returns `None` if every protection slot for this handle is already in
+    /// use. Protecting a null pointer succeeds and returns a guard that holds
+    /// null (which never needs releasing and retires as a no-op).
     pub fn protect(&self, ptr: *mut T) -> Option<Guard<'_, T>> {
         if ptr.is_null() {
             return Some(Guard {
@@ -292,8 +317,17 @@ struct HazardPointersInner<T> {
     locals: Vec<HazardPointersLocal<T>>,
 }
 
-/// Hazard pointers is a technique for *safe memory reclamation* in
-/// concurrent, lock-free data structures.
+/// A registry implementing *safe memory reclamation* for concurrent,
+/// lock-free data structures.
+///
+/// Each thread acquires a [`Local`] handle via [`HazardPointers::local`],
+/// protects pointers it is about to dereference with [`Local::protect`], and
+/// retires pointers it has unlinked with [`Guard::retire`]. Retired pointers
+/// that are no longer protected by any thread are handed back to the caller by
+/// [`HazardPointers::reclaim`], which then owns and must free them.
+///
+/// A registry is cheaply shareable (`Clone` shares the same underlying state)
+/// and is `Send`/`Sync` when `T: Send`.
 #[derive(Clone)]
 pub struct HazardPointers<T> {
     inner: Arc<UnsafeCell<HazardPointersInner<T>>>,
@@ -310,8 +344,15 @@ unsafe impl<T: Send> Sync for HazardPointers<T> {}
 unsafe impl<T: Send> Send for HazardPointers<T> {}
 
 impl<T> HazardPointers<T> {
-    /// Creates `locals` slots for threads. Each having `ptrs` slots for pointers
-    /// to be protected.
+    /// Creates a registry sized for a known concurrency level.
+    ///
+    /// `locals` is the maximum number of threads that can hold a [`Local`]
+    /// handle at the same time; [`HazardPointers::local`] returns `None` once
+    /// they are all in use.
+    ///
+    /// `ptrs` is the maximum number of pointers a single thread can protect
+    /// at the same time; [`Local::protect`] returns `None` once a thread has
+    /// used up all its slots.
     #[must_use]
     pub fn with_capacity(locals: usize, ptrs: usize) -> HazardPointers<T> {
         HazardPointers {
@@ -358,9 +399,11 @@ impl<T> HazardPointers<T> {
         dbg!(nodes);
     }
 
-    /// Give access to protecting pointers. `Local` must be consumed
-    /// by [`Local::finish`] to make it clear when all pointers are
-    /// unprotected.
+    /// Acquires a per-thread handle for protecting and retiring pointers.
+    ///
+    /// Returns `None` if all `locals` handles (see [`HazardPointers::with_capacity`])
+    /// are currently held. The returned [`Local`] must be released with
+    /// [`Local::finish`] when the thread is done.
     #[must_use]
     pub fn local(&self) -> Option<Local<'_, T>> {
         let inner = unsafe { &*self.inner.get() };
@@ -398,11 +441,15 @@ impl<T> HazardPointers<T> {
         false
     }
 
-    /// Push into `v` all retired pointer which is not being protected.
-    /// Caller must decide what to do with the returned pointers.
+    /// Collects retired pointers that are safe to free into `reclaimed`.
     ///
-    /// `v` will be sorted and deduped, so ideally it should be empty.
-    /// To avoid allocations, one can also resuse the same `Vec` multiple times.
+    /// A retired pointer is returned only once no guard is protecting it. The
+    /// caller takes ownership of every pointer in `reclaimed` and is
+    /// responsible for freeing/dropping them.
+    ///
+    /// `reclaimed` is sorted and deduplicated before returning, so it is safe
+    /// to reuse the same `Vec` across calls (passing it in non-empty is fine;
+    /// existing entries are kept and included in the sort/dedup).
     pub fn reclaim(&self, reclaimed: &mut Vec<*mut T>) {
         let inner = unsafe { &*self.inner.get() };
         for local in &inner.locals {
@@ -438,6 +485,9 @@ mod tests {
         thread::ThreadSafePtr,
     };
 
+    /// `HazardPointers<T: Send>` claims `Send + Sync`; this is a compile-time
+    /// assertion of that contract (sharing a registry across threads must be
+    /// legal).
     #[test]
     fn hazard_pointers_is_send_sync() {
         fn assert_send<T: Send>() {}
@@ -446,6 +496,9 @@ mod tests {
         assert_sync::<HazardPointers<u64>>();
     }
 
+    /// `protect` must publish the pointer into a slot and `unprotect` must
+    /// release it: after protect the slot holds the pointer, after unprotect
+    /// the slot is empty again.
     #[test]
     fn protect_unprotect_must_use_slots() {
         model(|| {
@@ -474,6 +527,9 @@ mod tests {
         });
     }
 
+    /// Protecting more distinct pointers than a handle has slots must saturate:
+    /// exactly `ptrs` protects succeed and the rest return `None`, with no
+    /// slot reused for two live guards.
     #[test]
     fn more_protects_than_slots() {
         model(|| {
@@ -501,6 +557,8 @@ mod tests {
         });
     }
 
+    /// `reclaim` on a registry with nothing retired must return an empty Vec
+    /// and must not panic or crash.
     #[test]
     fn reclaim_empty() {
         model(|| {
@@ -520,6 +578,9 @@ mod tests {
         });
     }
 
+    /// The simplest full cycle: protect a pointer, retire it (which releases
+    /// the protection), then `reclaim` must hand that single pointer back to
+    /// the caller.
     #[test]
     fn single_protect_retire_and_reclaim() {
         model(|| {
@@ -541,6 +602,9 @@ mod tests {
         });
     }
 
+    /// A retired pointer that another thread is still protecting must NOT be
+    /// reclaimed, and must be reclaimed as soon as that protection is released.
+    /// This is the core safety guarantee of hazard pointers.
     #[test]
     fn protect_prevents_reclaim() {
         model(|| {
@@ -594,6 +658,8 @@ mod tests {
         });
     }
 
+    /// Retiring distinct pointers from several handles, with no lingering
+    /// protections, must let a single `reclaim` return all of them.
     #[test]
     fn multiple_retirements() {
         model(|| {
@@ -622,6 +688,8 @@ mod tests {
         });
     }
 
+    /// Among several retired pointers, `reclaim` must return only the ones not
+    /// currently protected and hold back the rest — a partial reclamation.
     #[test]
     fn partial_reclaim() {
         model(|| {
@@ -653,6 +721,9 @@ mod tests {
         });
     }
 
+    /// Several threads protect a pointer concurrently; the registry must show
+    /// the pointer as protected while they hold it, and as unprotected once
+    /// they all release and finish.
     #[test]
     fn protect_multi_thread() {
         model(|| {
@@ -697,6 +768,9 @@ mod tests {
         });
     }
 
+    /// Under contention, every pointer retired by the threads must eventually
+    /// be reclaimable: a final `reclaim` after the threads finish must return
+    /// exactly as many pointers as were retired (no loss, no duplication).
     #[test]
     fn high_contention_protect_and_retire() {
         model(|| {
@@ -745,6 +819,10 @@ mod tests {
         });
     }
 
+    /// The real-world pattern: one thread protects a value while another
+    /// retires it and calls `reclaim`. The value must survive `reclaim` while
+    /// the protection is held, and be handed back by the next `reclaim` once
+    /// the protector releases.
     #[test]
     fn mixed_concurrent_access() {
         model(|| {
@@ -796,6 +874,9 @@ mod tests {
         });
     }
 
+    /// `finish` must release the handle so it can be acquired again: once all
+    /// handles are taken `local()` returns `None`, and after finishing them the
+    /// same number can be acquired again.
     #[test]
     fn local_finish_must_set_local_as_available() {
         model(|| {
@@ -819,6 +900,9 @@ mod tests {
         });
     }
 
+    /// Protection slots must be reusable: many protect/unprotect cycles on
+    /// the same handle, repeated across many handle acquire/finish cycles,
+    /// must keep working without exhausting slots or panicking.
     #[test]
     fn slots_remain_reusable_across_cycles() {
         model(|| {
@@ -837,6 +921,10 @@ mod tests {
         });
     }
 
+    /// Dropping a live guard (without `unprotect`/`retire`) must trip the drop
+    /// bomb on debug builds (panic) and must still release the slot so it is
+    /// usable afterwards; on release builds the drop is silent but the slot is
+    /// still released.
     #[test]
     fn guard_drop() {
         model(|| {
@@ -872,6 +960,9 @@ mod tests {
         });
     }
 
+    /// Retiring the same pointer twice must still yield it exactly once from
+    /// `reclaim` (the dedup contract) — never zero (loss) and never twice
+    /// (double free).
     #[test]
     fn double_retire() {
         model(|| {
@@ -895,6 +986,9 @@ mod tests {
         });
     }
 
+    /// Protecting a null pointer is a permitted no-op: it succeeds, `unprotect`
+    /// is a no-op, and `retire` on it returns `false` (nulls are never
+    /// reclaimable).
     #[test]
     fn protect_null_pointer() {
         model(|| {
@@ -911,6 +1005,9 @@ mod tests {
         });
     }
 
+    /// With nothing protected, `reclaim` must return nothing; and a freshly
+    /// protected-then-retired pointer must come back from `reclaim` exactly
+    /// once. This guards against a stale slot falsely appearing as protected.
     #[test]
     fn empty_slots_must_not_protect_any_pointer() {
         model(|| {
@@ -936,6 +1033,8 @@ mod tests {
         });
     }
 
+    /// A registry with zero handles must always return `None` from `local()`
+    /// (no thread can acquire a handle).
     #[test]
     fn zero_locals_returns_none() {
         model(|| {
@@ -944,6 +1043,395 @@ mod tests {
                 hp.local().is_none(),
                 "With zero locals, local() must return None"
             );
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // ABA / concurrency robustness tests.
+    //
+    // Focus on the retirement list (a lock-free stack of RetireNode pushed via
+    // an untagged AtomicPtr CAS — the prime ABA surface) and on `reclaim`
+    // being safe to call concurrently with `retire`.
+    //
+    // Invariants exercised:
+    //   * a protected pointer is never reclaimed,
+    //   * every retired pointer is reclaimed exactly once (no loss, no double),
+    //   * `reclaim` is idempotent once the retire list is drained,
+    //   * `local()` never hands the same slot to two threads.
+    //
+    // Tests deliberately avoid freeing reclaimed pointers in the concurrent
+    // cases so that a hypothetical double-reclaim surfaces as a detected
+    // condition (via a claimed-bit swap) rather than as test-side UB.
+    // -------------------------------------------------------------------------
+
+    /// After every retired pointer has been handed back, a second `reclaim`
+    /// must return nothing — `reclaim` must not re-publish already-reclaimed
+    /// pointers (which would happen if a freed retirement node's address were
+    /// reused, the ABA hazard on the retirement list).
+    #[test]
+    fn reclaim_is_idempotent_once_drained() {
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
+
+            let ptrs: Vec<*mut u64> = (0..4)
+                .map(|_| Box::leak(Box::new(42u64)) as *mut u64)
+                .collect();
+            for &p in &ptrs {
+                let _ = local.protect(p).unwrap().retire();
+            }
+            local.finish();
+
+            let mut v1 = Vec::new();
+            hp.reclaim(&mut v1);
+            assert_eq!(
+                v1.len(),
+                ptrs.len(),
+                "first reclaim returns all retired ptrs"
+            );
+
+            let mut v2 = Vec::new();
+            hp.reclaim(&mut v2);
+            assert!(
+                v2.is_empty(),
+                "second reclaim on a drained retire list must return nothing (ABA leak)"
+            );
+
+            // Free only the singly-reclaimed pointers (sound: reclaimed once).
+            for p in v1 {
+                // SAFETY: `p` was a leaked `Box` and reclaim handed us unique
+                // ownership of it exactly once.
+                unsafe {
+                    drop(Box::from_raw(p));
+                }
+            }
+        });
+    }
+
+    /// Two threads call `reclaim` concurrently on a retire list of N unique
+    /// pointers. Each pointer must be claimed exactly once across both calls —
+    /// never zero (loss) and never twice (double free / ABA). Detection is via
+    /// a per-pointer `AtomicBool` claimed-bit, so no UB is incurred if the
+    /// implementation double-reclaims.
+    #[test]
+    fn concurrent_reclaim_no_double_reclaim() {
+        model(|| {
+            const N: usize = 8;
+            let hp = HazardPointers::<usize>::with_capacity(8, 8);
+
+            // Leaked boxes whose *value* is the index; never freed by the test
+            // so that a double-reclaim is observable without UB.
+            let ptrs: Vec<*mut usize> = (0..N)
+                .map(|i| Box::leak(Box::new(i)) as *mut usize)
+                .collect();
+            let claimed: Vec<AtomicBool> = (0..N).map(|_| AtomicBool::new(false)).collect();
+
+            // Retire all from one local so the retire list is populated before
+            // the reclaimer threads race on it.
+            let local = hp.local().unwrap();
+            for &p in &ptrs {
+                let _ = local.protect(p).unwrap().retire();
+            }
+            local.finish();
+
+            let claimed_ref = &claimed;
+            let hp = &hp;
+            crate::thread::scope(|scope| {
+                for _ in 0..2 {
+                    scope.spawn(move || {
+                        let mut v = Vec::new();
+                        hp.reclaim(&mut v);
+                        for p in v {
+                            // SAFETY: `p` is a leaked Box we (tentatively) own
+                            // via reclaim; reading the index is a shared read
+                            // with no concurrent writer.
+                            let idx = unsafe { *p };
+                            if claimed_ref[idx].swap(true, Ordering::AcqRel) {
+                                panic!("pointer {idx} reclaimed twice (double free / ABA)");
+                            }
+                        }
+                    });
+                }
+            });
+
+            let total: usize = claimed
+                .iter()
+                .map(|b| usize::from(b.load(Ordering::SeqCst)))
+                .sum();
+            assert_eq!(
+                total, N,
+                "every retired pointer must be reclaimed exactly once (no loss, no double)"
+            );
+        });
+    }
+
+    /// Threads retire unique pointers while a concurrent reclaimer drains the
+    /// list. After joining plus a final drain, the number reclaimed must equal
+    /// the number retired — no pointer lost, none reclaimed twice. Pointers
+    /// are leaked (not freed) so a double-reclaim is detected by count rather
+    /// than by UB.
+    #[test]
+    fn concurrent_retire_and_reclaim_counts_match() {
+        model(|| {
+            const THREADS: usize = 2;
+            const PER: usize = 4;
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let retired = AtomicUsize::new(0);
+            let reclaimed = AtomicUsize::new(0);
+
+            crate::thread::scope(|scope| {
+                let hp = &hp;
+                let retired = &retired;
+                let reclaimed = &reclaimed;
+                for _ in 0..THREADS {
+                    scope.spawn(move || {
+                        let local = hp.local().unwrap();
+                        for _ in 0..PER {
+                            let p = Box::leak(Box::new(42u64)) as *mut u64;
+                            let _ = local.protect(p).unwrap().retire();
+                            retired.fetch_add(1, Ordering::Relaxed);
+                        }
+                        local.finish();
+                    });
+                }
+                // Concurrent reclaimer: drain repeatedly while retirers run.
+                scope.spawn(move || {
+                    let mut v = Vec::new();
+                    for _ in 0..8 {
+                        hp.reclaim(&mut v);
+                    }
+                    reclaimed.fetch_add(v.len(), Ordering::Relaxed);
+                    // Intentionally do not free: avoids UB if impl double-reclaims.
+                });
+            });
+
+            // Final drain after everyone joined.
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
+            reclaimed.fetch_add(v.len(), Ordering::Relaxed);
+
+            assert_eq!(
+                retired.load(Ordering::SeqCst),
+                reclaimed.load(Ordering::SeqCst),
+                "every retired pointer must be reclaimed exactly once (no loss, no double)"
+            );
+        });
+    }
+
+    /// Two threads protect the same pointer; a third retires it and tries to
+    /// reclaim. The pointer must not be reclaimed while either protector
+    /// holds it, and must be reclaimed once both release.
+    #[test]
+    fn two_protectors_block_reclaim() {
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let value: &mut u64 = Box::leak(Box::new(42u64));
+            let ptr = ThreadSafePtr(value as *mut u64);
+
+            // 3 threads meet at each barrier (2 protectors + 1 reclaimer).
+            let b_protect = Barrier::new(3);
+            let b_release = Barrier::new(3);
+            let b_unprotected = Barrier::new(3);
+
+            crate::thread::scope(|scope| {
+                for _ in 0..2 {
+                    scope.spawn(|| {
+                        let local = hp.local().unwrap();
+                        let g = local.protect(ptr.ptr()).unwrap();
+                        b_protect.wait();
+                        b_release.wait();
+                        g.unprotect();
+                        b_unprotected.wait();
+                        local.finish();
+                    });
+                }
+                scope.spawn(|| {
+                    let local = hp.local().unwrap();
+                    let g = local.protect(ptr.ptr()).unwrap();
+                    let _ = g.retire();
+                    local.finish();
+
+                    b_protect.wait();
+                    let mut v = Vec::new();
+                    hp.reclaim(&mut v);
+                    assert!(
+                        v.is_empty(),
+                        "ptr still protected by two threads; must not be reclaimed"
+                    );
+
+                    b_release.wait();
+                    b_unprotected.wait();
+
+                    let mut v = Vec::new();
+                    hp.reclaim(&mut v);
+                    assert_eq!(v.len(), 1, "ptr reclaimed after both protectors release");
+                    assert_eq!(v[0], ptr.ptr());
+                });
+            });
+        });
+    }
+
+    /// With `locals = 2` and three threads contending for `local()` at the
+    /// same time, exactly two must acquire a local and one must get `None` —
+    /// the availability CAS must never hand the same local to two threads
+    /// concurrently. A barrier makes all three call `local()` before any
+    /// releases via `finish()`.
+    #[test]
+    fn local_exhaustion_returns_none_under_contention() {
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(2, 2);
+            let acquired = AtomicUsize::new(0);
+            let failed = AtomicUsize::new(0);
+            let barrier = Barrier::new(3);
+
+            crate::thread::scope(|scope| {
+                for _ in 0..3 {
+                    scope.spawn(|| {
+                        match hp.local() {
+                            Some(l) => {
+                                acquired.fetch_add(1, Ordering::SeqCst);
+                                // Hold the local across the barrier so all
+                                // three contend simultaneously.
+                                barrier.wait();
+                                l.finish();
+                            }
+                            None => {
+                                failed.fetch_add(1, Ordering::SeqCst);
+                                barrier.wait();
+                            }
+                        }
+                    });
+                }
+            });
+
+            assert_eq!(
+                acquired.load(Ordering::SeqCst) + failed.load(Ordering::SeqCst),
+                3,
+                "every thread must observe exactly one outcome"
+            );
+            assert_eq!(acquired.load(Ordering::SeqCst), 2, "only two locals exist");
+            assert_eq!(failed.load(Ordering::SeqCst), 1, "one thread must get None");
+        });
+    }
+
+    /// Interleave `retire` and `reclaim` on the same handle across threads in a
+    /// tight loop. This stresses the CAS that pushes onto the retirement list
+    /// against the swap that drains it — the surface where an ABA on the
+    /// untagged retirement-list head would corrupt the list. We assert no panic
+    /// and no deadlock (loom will flag a hang); a final drain must leave the
+    /// list empty.
+    #[test]
+    fn retire_reclaim_burst_no_panic_or_deadlock() {
+        model(|| {
+            const THREADS: usize = 2;
+            const ITERS: usize = 8;
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+
+            crate::thread::scope(|scope| {
+                for _ in 0..THREADS {
+                    scope.spawn(|| {
+                        let local = hp.local().unwrap();
+                        for _ in 0..ITERS {
+                            let p = Box::leak(Box::new(42u64)) as *mut u64;
+                            let _ = local.protect(p).unwrap().retire();
+                            let mut v = Vec::new();
+                            hp.reclaim(&mut v);
+                            // Intentionally do not free.
+                        }
+                        local.finish();
+                    });
+                }
+            });
+
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
+            assert!(
+                v.is_empty(),
+                "after everyone joined, a final reclaim must drain everything"
+            );
+        });
+    }
+
+    /// A pointer retired and reclaimed, then had its address reused for a new
+    /// retirement, must not trip an ABA: reclaim must not return the new
+    /// retirement's pointer as if it were the old one. Single-threaded but
+    /// exercises the retire→reclaim→reuse→retire→reclaim cycle.
+    #[test]
+    fn retire_reclaim_reuse_retire_cycle() {
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+
+            for _ in 0..16 {
+                let local = hp.local().unwrap();
+                // Allocate, retire, reclaim, then explicitly free so the
+                // address may be reused by the next Box::new.
+                let p = Box::into_raw(Box::new(42u64));
+                let _ = local.protect(p).unwrap().retire();
+                local.finish();
+
+                let mut v = Vec::new();
+                hp.reclaim(&mut v);
+                assert_eq!(v.len(), 1, "exactly one pointer reclaimed per cycle");
+                assert_eq!(v[0], p, "reclaimed pointer must be the one we retired");
+                // SAFETY: reclaim gave us unique ownership.
+                unsafe {
+                    drop(Box::from_raw(p));
+                }
+            }
+        });
+    }
+
+    /// Many threads all protecting the same pointer while one thread retires
+    /// and repeatedly reclaims: the pointer must never be reclaimed until
+    /// every protector has released. Three barriers separate the phases so
+    /// the reclaimer's final reclaim strictly happens-after the protectors'
+    /// `unprotect`.
+    #[test]
+    fn many_protectors_one_reclaimer_no_early_reclaim() {
+        model(|| {
+            const PROTECTORS: usize = 2;
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let value: &mut u64 = Box::leak(Box::new(42u64));
+            let ptr = ThreadSafePtr(value as *mut u64);
+            let ready = Barrier::new(PROTECTORS + 1);
+            let release = Barrier::new(PROTECTORS + 1);
+            let unprotected = Barrier::new(PROTECTORS + 1);
+
+            crate::thread::scope(|scope| {
+                for _ in 0..PROTECTORS {
+                    scope.spawn(|| {
+                        let local = hp.local().unwrap();
+                        let g = local.protect(ptr.ptr()).unwrap();
+                        ready.wait();
+                        release.wait();
+                        g.unprotect();
+                        unprotected.wait();
+                        local.finish();
+                    });
+                }
+                scope.spawn(|| {
+                    let local = hp.local().unwrap();
+                    let g = local.protect(ptr.ptr()).unwrap();
+                    let _ = g.retire();
+                    local.finish();
+
+                    ready.wait();
+                    for _ in 0..3 {
+                        let mut v = Vec::new();
+                        hp.reclaim(&mut v);
+                        assert!(v.is_empty(), "pointer reclaimed while still protected");
+                    }
+                    release.wait();
+                    unprotected.wait();
+                    let mut v = Vec::new();
+                    hp.reclaim(&mut v);
+                    assert_eq!(
+                        v.len(),
+                        1,
+                        "pointer reclaimed after all protectors released"
+                    );
+                });
+            });
         });
     }
 }
