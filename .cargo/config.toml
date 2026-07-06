@@ -1,0 +1,15 @@
+# Miri configuration for the concurrency / SMR test suite.
+#
+# Several hazard-pointer and freelist tests deliberately leak memory:
+#   * retirement-list ABA / double-reclaim detection tests hold reclaimed
+#     pointers without freeing them, so that a hypothetical double-reclaim
+#     surfaces as a detected condition (a `panic!` or a counter mismatch)
+#     rather than as test-side double-free undefined behavior;
+#   * some protect-vs-reclaim tests keep a guarded value alive for the
+#     duration of the schedule.
+#
+# Leaked-but-still-reachable-in-principle memory is not a correctness bug
+# here, so we disable miri's leak check. UB / data-race / out-of-bounds
+# checks remain fully enabled.
+[env]
+MIRIFLAGS = "-Zmiri-ignore-leaks"
