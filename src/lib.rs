@@ -15,3 +15,5 @@ pub mod smr;
 pub(crate) mod sync;
 /// Thread primitives
 pub(crate) mod thread;
+
+pub(crate) mod collections;
