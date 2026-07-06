@@ -223,7 +223,11 @@ mod tests {
         );
 
         tp.wrapping_add_tag(2);
-        assert_eq!(tp.inner, TaggedPtr::new(p, 2).inner, "wrap then add 2 -> tag 2");
+        assert_eq!(
+            tp.inner,
+            TaggedPtr::new(p, 2).inner,
+            "wrap then add 2 -> tag 2"
+        );
     }
 
     /// `byte_add` / `byte_sub` must preserve the tag and move only the
@@ -277,20 +281,22 @@ mod tests {
         // it must eventually win).
         let mut ok = Err(TaggedPtr::new(p, 0));
         for _ in 0..64 {
-            if a
-                .compare_exchange_weak(
-                    TaggedPtr::new(p, 0),
-                    TaggedPtr::new(p, 5),
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                )
-                .is_ok()
+            if a.compare_exchange_weak(
+                TaggedPtr::new(p, 0),
+                TaggedPtr::new(p, 5),
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok()
             {
                 ok = Ok(TaggedPtr::new(p, 5));
                 break;
             }
         }
-        assert!(ok.is_ok(), "CAS with matching tag must succeed (after retrying spurious failures)");
+        assert!(
+            ok.is_ok(),
+            "CAS with matching tag must succeed (after retrying spurious failures)"
+        );
         assert_eq!(a.load(Ordering::SeqCst).inner, TaggedPtr::new(p, 5).inner);
     }
 
@@ -313,14 +319,13 @@ mod tests {
                         for _ in 0..4 {
                             let cur = a.load(Ordering::Acquire);
                             let target = if cur.inner == t0.inner { t1 } else { t0 };
-                            if a
-                                .compare_exchange_weak(
-                                    cur,
-                                    target,
-                                    Ordering::AcqRel,
-                                    Ordering::Acquire,
-                                )
-                                .is_ok()
+                            if a.compare_exchange_weak(
+                                cur,
+                                target,
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
+                            )
+                            .is_ok()
                             {
                                 ops.fetch_add(1, Ordering::Relaxed);
                             }
@@ -335,7 +340,10 @@ mod tests {
                 final_.inner == t0.inner || final_.inner == t1.inner,
                 "final tag must be 0 or 1, got a corrupted packed value"
             );
-            assert!(ops.load(Ordering::SeqCst) > 0, "at least one CAS must succeed");
+            assert!(
+                ops.load(Ordering::SeqCst) > 0,
+                "at least one CAS must succeed"
+            );
         });
     }
 
@@ -350,7 +358,10 @@ mod tests {
         let tagged = TaggedPtr::new(p, 123);
         a.store(tagged, Ordering::SeqCst);
         let loaded = a.load(Ordering::SeqCst);
-        assert_eq!(loaded.inner, tagged.inner, "store/load must round-trip the tag");
+        assert_eq!(
+            loaded.inner, tagged.inner,
+            "store/load must round-trip the tag"
+        );
         assert_eq!(loaded.ptr(), p, "store/load must round-trip the ptr");
     }
 }

@@ -443,7 +443,7 @@ mod tests {
                     });
                 }
             });
-        })
+        });
     }
 
     /// `alloc` must stop returning new buffers once the pool's capacity is
@@ -470,7 +470,7 @@ mod tests {
             for buffer in buffers {
                 s.dealloc(buffer);
             }
-        })
+        });
     }
 
     /// With small capacity knobs, returning more buffers than the pool wants to
@@ -513,7 +513,7 @@ mod tests {
             assert!(s.dealloc(buffers.pop().unwrap()));
             assert_eq!(s.qty_in_list.load(Ordering::Relaxed), 5);
             assert_eq!(s.qty_retired.load(Ordering::Relaxed), 0);
-        })
+        });
     }
 
     /// `dealloc` of a null pointer is a no-op and must return `false`.
@@ -689,10 +689,10 @@ mod tests {
                             if let Some(p) = s.alloc() {
                                 held.push(p);
                             }
-                            if held.len() > 4 {
-                                if let Some(p) = held.pop() {
-                                    let _ = s.dealloc(p);
-                                }
+                            if held.len() > 4
+                                && let Some(p) = held.pop()
+                            {
+                                let _ = s.dealloc(p);
                             }
                         }
                         for p in held {

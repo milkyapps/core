@@ -1075,7 +1075,7 @@ mod tests {
             let local = hp.local().unwrap();
 
             let ptrs: Vec<*mut u64> = (0..4)
-                .map(|_| Box::leak(Box::new(42u64)) as *mut u64)
+                .map(|_| std::ptr::from_mut::<u64>(Box::leak(Box::new(42u64))))
                 .collect();
             for &p in &ptrs {
                 let _ = local.protect(p).unwrap().retire();
@@ -1122,7 +1122,7 @@ mod tests {
             // Leaked boxes whose *value* is the index; never freed by the test
             // so that a double-reclaim is observable without UB.
             let ptrs: Vec<*mut usize> = (0..N)
-                .map(|i| Box::leak(Box::new(i)) as *mut usize)
+                .map(|i| std::ptr::from_mut::<usize>(Box::leak(Box::new(i))))
                 .collect();
             let claimed: Vec<AtomicBool> = (0..N).map(|_| AtomicBool::new(false)).collect();
 
@@ -1146,9 +1146,11 @@ mod tests {
                             // via reclaim; reading the index is a shared read
                             // with no concurrent writer.
                             let idx = unsafe { *p };
-                            if claimed_ref[idx].swap(true, Ordering::AcqRel) {
-                                panic!("pointer {idx} reclaimed twice (double free / ABA)");
-                            }
+
+                            assert!(
+                                !claimed_ref[idx].swap(true, Ordering::AcqRel),
+                                "pointer {idx} reclaimed twice (double free / ABA)"
+                            );
                         }
                     });
                 }
@@ -1187,7 +1189,7 @@ mod tests {
                     scope.spawn(move || {
                         let local = hp.local().unwrap();
                         for _ in 0..PER {
-                            let p = Box::leak(Box::new(42u64)) as *mut u64;
+                            let p = std::ptr::from_mut::<u64>(Box::leak(Box::new(42u64)));
                             let _ = local.protect(p).unwrap().retire();
                             retired.fetch_add(1, Ordering::Relaxed);
                         }
@@ -1226,7 +1228,7 @@ mod tests {
         model(|| {
             let hp = HazardPointers::<u64>::with_capacity(8, 8);
             let value: &mut u64 = Box::leak(Box::new(42u64));
-            let ptr = ThreadSafePtr(value as *mut u64);
+            let ptr = ThreadSafePtr(std::ptr::from_mut::<u64>(value));
 
             // 3 threads meet at each barrier (2 protectors + 1 reclaimer).
             let b_protect = Barrier::new(3);
@@ -1287,18 +1289,15 @@ mod tests {
             crate::thread::scope(|scope| {
                 for _ in 0..3 {
                     scope.spawn(|| {
-                        match hp.local() {
-                            Some(l) => {
-                                acquired.fetch_add(1, Ordering::SeqCst);
-                                // Hold the local across the barrier so all
-                                // three contend simultaneously.
-                                barrier.wait();
-                                l.finish();
-                            }
-                            None => {
-                                failed.fetch_add(1, Ordering::SeqCst);
-                                barrier.wait();
-                            }
+                        if let Some(l) = hp.local() {
+                            acquired.fetch_add(1, Ordering::SeqCst);
+                            // Hold the local across the barrier so all
+                            // three contend simultaneously.
+                            barrier.wait();
+                            l.finish();
+                        } else {
+                            failed.fetch_add(1, Ordering::SeqCst);
+                            barrier.wait();
                         }
                     });
                 }
@@ -1332,7 +1331,7 @@ mod tests {
                     scope.spawn(|| {
                         let local = hp.local().unwrap();
                         for _ in 0..ITERS {
-                            let p = Box::leak(Box::new(42u64)) as *mut u64;
+                            let p = std::ptr::from_mut::<u64>(Box::leak(Box::new(42u64)));
                             let _ = local.protect(p).unwrap().retire();
                             let mut v = Vec::new();
                             hp.reclaim(&mut v);
@@ -1392,7 +1391,7 @@ mod tests {
             const PROTECTORS: usize = 2;
             let hp = HazardPointers::<u64>::with_capacity(8, 8);
             let value: &mut u64 = Box::leak(Box::new(42u64));
-            let ptr = ThreadSafePtr(value as *mut u64);
+            let ptr = ThreadSafePtr(std::ptr::from_mut::<u64>(value));
             let ready = Barrier::new(PROTECTORS + 1);
             let release = Barrier::new(PROTECTORS + 1);
             let unprotected = Barrier::new(PROTECTORS + 1);
