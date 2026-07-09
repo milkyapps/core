@@ -14,7 +14,7 @@ test-loom $LOOM_LOG="info" filter="":
     LOOM_MAX_PERMUTATIONS=2000 \
     LOOM_MAX_DURATION=30 \
     LOOM_CHECKPOINT_INTERVAL=1000 \
-    cargo test --tests -- {{filter}} --no-capture
+    cargo test --tests -- {{filter}}
 
 flamegraph *ARGS:
     sudo cargo flamegraph --bench hazard_ptrs {{ARGS}}

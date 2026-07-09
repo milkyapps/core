@@ -16,4 +16,5 @@ pub(crate) mod sync;
 /// Thread primitives
 pub(crate) mod thread;
 
-pub(crate) mod collections;
+/// Reusable collection data structures.
+pub mod collections;
