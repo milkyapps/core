@@ -254,6 +254,17 @@ mod tests {
         );
     }
 
+    /// A null pointer round-trips through `TaggedPtr` without losing its tag.
+    #[test]
+    fn tagged_ptr_null_roundtrip() {
+        let tp = TaggedPtr::new(std::ptr::null_mut::<u64>(), 7);
+        assert!(tp.ptr().is_null());
+        assert_eq!(
+            tp.inner,
+            TaggedPtr::new(std::ptr::null_mut::<u64>(), 7).inner
+        );
+    }
+
     /// `AtomicTagged` load/store must be faithful to the tagged value, and a
     /// CAS with a mismatched tag must fail while a CAS with the matching tag
     /// must succeed — this is the ABA-mitigation contract.

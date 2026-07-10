@@ -30,6 +30,7 @@ pub struct Freelist {
     qty_allocated: AtomicUsize,
     qty_in_list: AtomicUsize,
     qty_retired: AtomicUsize,
+    /// It is possible that under contention more allocations than `alloc_max` happens.
     alloc_max: usize,
     list_max: usize,
     retired_max: usize,
@@ -202,11 +203,21 @@ impl Freelist {
         loop {
             let head = self.head.load(Ordering::Acquire);
             if head.ptr().is_null() {
-                local.finish();
-
                 if self.qty_allocated.load(Ordering::Relaxed) >= self.alloc_max {
-                    return None;
+                    let mut nodes = vec![];
+                    self.hp.reclaim(&mut nodes);
+                    if nodes.is_empty() {
+                        local.finish();
+                        return None;
+                    }
+                    for node in nodes {
+                        let ptr = unsafe { node.byte_add(self.offset).cast::<()>() };
+                        self.dealloc(TaggedPtr::new(ptr, 0));
+                    }
+                    continue;
                 }
+
+                local.finish();
 
                 // SAFETY: We check ptr is null before deref it
                 // CLIPPY is incorrect here as alloc does return a pointer alligned to Node
@@ -524,6 +535,90 @@ mod tests {
             let s = Freelist::new(layout).unwrap();
             let null = TaggedPtr::new(null_mut::<()>(), 0);
             assert!(!s.dealloc(null), "dealloc of null must return false");
+        });
+    }
+
+    /// `alloc_max` is advertised as the total number of buffers the pool will
+    /// ever own. The check in `alloc` reads `qty_allocated`, then allocates and
+    /// increments the counter; the read and the increment are not atomic, so
+    /// two threads can both observe the counter below the cap and both
+    /// allocate, causing `qty_allocated` to overshoot `alloc_max`.
+    #[test]
+    fn alloc_max_counter_can_exceed_cap() {
+        model(|| {
+            let layout = Layout::from_size_align(8, 8).unwrap();
+            let mut s = Freelist::new(layout).unwrap();
+            s.alloc_max = 8;
+            s.list_max = 8;
+
+            let barrier = crate::sync::Barrier::new(2);
+            let taken = crate::sync::atomic::AtomicUsize::new(0);
+
+            crate::thread::scope(|scope| {
+                let s = &s;
+                let barrier = &barrier;
+                let taken = &taken;
+                for _ in 0..2 {
+                    scope.spawn(move || {
+                        barrier.wait();
+                        for _ in 0..s.alloc_max {
+                            if s.alloc().is_some() {
+                                taken.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    });
+                }
+            });
+
+            let qty = s.qty_allocated.load(Ordering::Relaxed);
+            let total = taken.load(Ordering::SeqCst);
+            assert!(
+                qty <= s.alloc_max,
+                "qty_allocated ({qty}) must never exceed alloc_max ({}); the read-increment race allowed an overshoot",
+                s.alloc_max
+            );
+            assert!(
+                total <= s.alloc_max,
+                "successful allocations ({total}) must never exceed alloc_max ({})",
+                s.alloc_max
+            );
+        });
+    }
+
+    /// When `alloc_max` is reached the allocator stops creating new buffers,
+    /// but it also stops reclaiming retired buffers. A retired buffer is still
+    /// part of `qty_allocated` and could be reused; returning `None` instead of
+    /// reclaiming it makes the pool starve even though memory is available.
+    #[test]
+    fn alloc_starves_despite_retired_buffers() {
+        model(|| {
+            let layout = Layout::from_size_align(8, 8).unwrap();
+            let mut s = Freelist::new(layout).unwrap();
+            s.alloc_max = 2;
+            s.list_max = 1;
+            s.retired_max = 1;
+
+            let a = s.alloc().unwrap();
+            let b = s.alloc().unwrap();
+
+            // First return fills the free list.
+            assert!(s.dealloc(a));
+            // Second return overflows the list and moves the node to the
+            // retirement list (retired == retired_max, so reclaim is not
+            // triggered yet).
+            assert!(s.dealloc(b));
+
+            // Take the one node that is still in the free list.
+            let _ = s.alloc().unwrap();
+
+            // At this point `qty_allocated == alloc_max`, but one retired
+            // buffer is still available. A well-behaved pool would reclaim it
+            // and hand it out; the current implementation returns `None`.
+            let next = s.alloc();
+            assert!(
+                next.is_some(),
+                "alloc() starved even though a retired buffer was available for reclaim"
+            );
         });
     }
 
@@ -864,6 +959,62 @@ mod tests {
                 after_first,
                 "recycling must not allocate new buffers (no node was lost from the list)"
             );
+        });
+    }
+
+    /// A freshly allocated buffer can be returned and then reallocated many
+    /// times without the pool losing track of it. The address must remain
+    /// stable across cycles (no node is silently dropped from the list).
+    #[test]
+    fn recycling_returns_same_buffer_repeatedly() {
+        model(|| {
+            let layout = Layout::from_size_align(8, 8).unwrap();
+            let s = Freelist::new(layout).unwrap();
+
+            let first = s.alloc().unwrap();
+            let first_ptr = first.ptr();
+            s.dealloc(first);
+
+            for _ in 0..16 {
+                let p = s.alloc().unwrap();
+                assert_eq!(
+                    p.ptr(),
+                    first_ptr,
+                    "recycling must return the same buffer, not allocate fresh memory"
+                );
+                s.dealloc(p);
+            }
+        });
+    }
+
+    /// Returning a buffer that was allocated when the list already held nodes
+    /// must still preserve the LIFO order: the most recently returned node is
+    /// at the head of the list.
+    #[test]
+    fn dealloc_maintains_lifo_order() {
+        model(|| {
+            let layout = Layout::from_size_align(8, 8).unwrap();
+            let s = Freelist::new(layout).unwrap();
+
+            let a = s.alloc().unwrap();
+            let b = s.alloc().unwrap();
+            let c = s.alloc().unwrap();
+
+            s.dealloc(a);
+            s.dealloc(b);
+            s.dealloc(c);
+
+            // LIFO: c should be popped first, then b, then a.
+            let p1 = s.alloc().unwrap();
+            let p2 = s.alloc().unwrap();
+            let p3 = s.alloc().unwrap();
+            assert_eq!(p1.ptr(), c.ptr());
+            assert_eq!(p2.ptr(), b.ptr());
+            assert_eq!(p3.ptr(), a.ptr());
+
+            s.dealloc(p1);
+            s.dealloc(p2);
+            s.dealloc(p3);
         });
     }
 

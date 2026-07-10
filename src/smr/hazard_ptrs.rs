@@ -343,6 +343,20 @@ unsafe impl<T: Send> Sync for HazardPointers<T> {}
 /// which means that `T` must be `Send`.
 unsafe impl<T: Send> Send for HazardPointers<T> {}
 
+impl<T> Drop for HazardPointers<T> {
+    fn drop(&mut self) {
+        let mut ptrs = vec![];
+        self.reclaim(&mut ptrs);
+
+        if !ptrs.is_empty() {
+            #[allow(clippy::manual_assert)]
+            if cfg!(debug_assertions) && !std::thread::panicking() {
+                panic!("HazardPointers has ptrs waiting to be reclaimed. (drop_bomb)");
+            }
+        }
+    }
+}
+
 impl<T> HazardPointers<T> {
     /// Creates a registry sized for a known concurrency level.
     ///
@@ -918,6 +932,76 @@ mod tests {
                 }
                 local.finish();
             }
+        });
+    }
+
+    /// `unprotect` consumes the guard and defuses the drop bomb. After it
+    /// returns, the slot is released and dropping the (now consumed) guard
+    /// does not panic even in debug builds.
+    #[test]
+    fn unprotect_defuses_drop_bomb() {
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
+            let ptr = &mut 42u64 as *mut u64;
+            let g = local.protect(ptr).unwrap();
+            g.unprotect();
+            // If `unprotect` failed to defuse the guard, the implicit drop of
+            // the consumed binding would trip the drop bomb on debug builds.
+            // The test reaching `finish()` proves the defusal happened.
+            local.finish();
+        });
+    }
+
+    /// Retiring the same pointer twice must yield it exactly once from
+    /// `reclaim` because the output vector is sorted and deduplicated.
+    /// The reclaimed pointer is then freed soundly.
+    #[test]
+    fn reclaim_dedups_duplicate_retirements() {
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(8, 8);
+            let local = hp.local().unwrap();
+            let value: &mut u64 = Box::leak(Box::new(42u64));
+            let ptr = std::ptr::from_mut(value);
+
+            let g1 = local.protect(ptr).unwrap();
+            let _ = g1.retire();
+            let g2 = local.protect(ptr).unwrap();
+            let _ = g2.retire();
+
+            let mut v = Vec::new();
+            hp.reclaim(&mut v);
+            assert_eq!(
+                v.len(),
+                1,
+                "duplicate retirements of the same pointer must be deduped"
+            );
+
+            local.finish();
+            // SAFETY: `reclaim` returned unique ownership of the leaked Box.
+            unsafe {
+                drop(Box::from_raw(ptr));
+            }
+        });
+    }
+
+    /// A registry configured with zero protection slots cannot protect
+    /// non-null pointers, but null protection remains a no-op.
+    #[test]
+    fn protect_zero_slots() {
+        model(|| {
+            let hp = HazardPointers::<u64>::with_capacity(2, 0);
+            let local = hp.local().unwrap();
+            let ptr = &mut 42u64 as *mut u64;
+            assert!(
+                local.protect(ptr).is_none(),
+                "with zero slots, non-null protect must fail"
+            );
+            assert!(
+                local.protect(null_mut()).is_some(),
+                "null protect always succeeds"
+            );
+            local.finish();
         });
     }
 

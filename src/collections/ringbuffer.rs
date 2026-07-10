@@ -61,10 +61,18 @@ use std::{
 //
 // [vyukov]: https://web.archive.org/web/20110410230018/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
 //
-#[derive(Debug)]
 struct Slot<T> {
     sequence: AtomicUsize,
     data: UnsafeCell<MaybeUninit<T>>,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Slot<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Slot")
+            .field("sequence", &self.sequence)
+            .field("data", unsafe { (*self.data.get()).assume_init_ref() })
+            .finish()
+    }
 }
 
 /// A bounded, lock-free multi-producer multi-consumer queue (ring buffer).
@@ -73,7 +81,10 @@ struct Slot<T> {
 /// since an item pushed on one thread may be popped on another.
 #[derive(Debug)]
 pub struct RingBuffer<T> {
-    slots: Vec<Slot<T>>,
+    slots: Box<[Slot<T>]>,
+    cap: usize,
+    mask: usize,
+    len: AtomicUsize,
     writer: AtomicUsize,
     reader: AtomicUsize,
 }
@@ -88,7 +99,10 @@ impl<T> Drop for RingBuffer<T> {
         // Exclusive `&mut self` ⇒ no concurrent access: drain and drop every
         // committed-but-unpopped item. In-flight (uncommitted) slots hold
         // uninitialized data and are correctly left untouched.
-        while self.pop().is_some() {}
+        let len = self.len.load(Ordering::Relaxed);
+        for _ in 0..len {
+            self.pop();
+        }
     }
 }
 
@@ -101,15 +115,11 @@ impl<T> RingBuffer<T> {
     /// possible for inputs larger than `2.pow(usize::BITS - 1)`.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> RingBuffer<T> {
-        let capacity = if capacity == 0 {
-            2
-        } else {
-            capacity.next_power_of_two()
-        };
+        let cap = capacity.next_power_of_two().max(2);
 
-        let mut slots = Vec::with_capacity(capacity);
+        let mut slots = Vec::with_capacity(cap);
 
-        for i in 0..capacity {
+        for i in 0..cap {
             slots.push(Slot {
                 sequence: AtomicUsize::new(i),
                 data: UnsafeCell::new(MaybeUninit::uninit()),
@@ -117,7 +127,10 @@ impl<T> RingBuffer<T> {
         }
 
         RingBuffer {
-            slots,
+            slots: slots.into_boxed_slice(),
+            cap: capacity,
+            mask: if capacity > 0 { capacity - 1 } else { 0 },
+            len: AtomicUsize::new(0),
             writer: AtomicUsize::new(0),
             reader: AtomicUsize::new(0),
         }
@@ -132,11 +145,17 @@ impl<T> RingBuffer<T> {
     ///
     /// Returns `Err(item)` if the buffer is full, with the item untouched.
     pub fn push(&self, item: T) -> Result<(), T> {
-        let mask = self.slots.len() - 1;
-
+        let max_duration = Duration::from_millis(1);
+        let mut park_duration = Duration::from_nanos(1);
         loop {
+            // check we are not full
+            let len = self.len.load(Ordering::Acquire);
+            if len == self.cap {
+                return Err(item);
+            }
+
             let writer = self.writer.load(Ordering::Acquire);
-            let slot = &self.slots[writer & mask];
+            let slot = &self.slots[writer & self.mask];
             let seq = slot.sequence.load(Ordering::Acquire);
 
             match seq.cast_signed() - writer.cast_signed() {
@@ -145,7 +164,7 @@ impl<T> RingBuffer<T> {
                         .writer
                         .compare_exchange_weak(
                             writer,
-                            writer + 1,
+                            writer.wrapping_add(1),
                             Ordering::AcqRel,
                             Ordering::Acquire,
                         )
@@ -158,13 +177,19 @@ impl<T> RingBuffer<T> {
                     // alone until we publish it by advancing the sequence.
                     unsafe { (*slot.data.get()).write(item) };
 
-                    slot.sequence.store(writer + 1, Ordering::Release);
+                    slot.sequence
+                        .store(writer.wrapping_add(1), Ordering::Release);
+                    self.len.fetch_add(1, Ordering::Release);
                     return Ok(());
                 }
                 // Queue is full
                 d if d < 0 => return Err(item),
                 _ => {
-                    std::thread::yield_now();
+                    std::thread::park_timeout(park_duration);
+                    park_duration *= 2;
+                    if park_duration > max_duration {
+                        park_duration = max_duration;
+                    }
                 }
             }
         }
@@ -202,20 +227,20 @@ impl<T> RingBuffer<T> {
     /// This is non-blocking: it returns `None` immediately when the buffer is
     /// empty rather than waiting for a producer.
     pub fn pop(&self) -> Option<T> {
-        let mask = self.slots.len() - 1;
-
+        let max_duration = Duration::from_millis(1);
+        let mut park_duration = Duration::from_nanos(1);
         loop {
             let reader = self.reader.load(Ordering::Acquire);
-            let slot = &self.slots[reader & mask];
+            let slot = &self.slots[reader & self.mask];
             let seq = slot.sequence.load(Ordering::Acquire);
 
-            match seq.cast_signed() - (reader + 1).cast_signed() {
+            match seq.cast_signed() - (reader.wrapping_add(1)).cast_signed() {
                 0 => {
                     if self
                         .reader
                         .compare_exchange_weak(
                             reader,
-                            reader + 1,
+                            reader.wrapping_add(1),
                             Ordering::AcqRel,
                             Ordering::Acquire,
                         )
@@ -230,13 +255,20 @@ impl<T> RingBuffer<T> {
                     let mut item = MaybeUninit::uninit();
                     std::mem::swap(data, &mut item);
 
-                    slot.sequence.store(reader + mask + 1, Ordering::Release);
-
+                    slot.sequence.store(
+                        reader.wrapping_add(self.mask).wrapping_add(1),
+                        Ordering::Release,
+                    );
+                    self.len.fetch_sub(1, Ordering::Release);
                     return Some(unsafe { item.assume_init() });
                 }
                 d if d < 0 => return None, // head not committed yet — empty
                 _ => {
-                    std::thread::yield_now();
+                    std::thread::park_timeout(park_duration);
+                    park_duration *= 2;
+                    if park_duration > max_duration {
+                        park_duration = max_duration;
+                    }
                 }
             }
         }
@@ -470,6 +502,96 @@ mod tests {
             rb.push(0).unwrap();
             rb.push(1).unwrap();
             assert_eq!(rb.push(2).unwrap_err(), 2);
+        });
+    }
+
+    /// A single producer and a single consumer exchanging many items must
+    /// preserve FIFO order and must not lose or duplicate items.
+    #[test]
+    fn single_producer_single_consumer_stress() {
+        model(|| {
+            const ROUNDS: usize = 100;
+            const PER_ROUND: usize = 8;
+            let rb = Arc::new(RingBuffer::<u64>::with_capacity(PER_ROUND));
+            let collected = Arc::new(Mutex::new(Vec::with_capacity(ROUNDS * PER_ROUND)));
+
+            std::thread::scope(|s| {
+                let rb_producer = Arc::clone(&rb);
+                s.spawn(move || {
+                    for round in 0..ROUNDS as u64 {
+                        for i in 0..PER_ROUND as u64 {
+                            rb_producer
+                                .push_with_timeout(round * 100 + i, Duration::from_millis(100))
+                                .unwrap();
+                        }
+                    }
+                });
+
+                let rb_consumer = Arc::clone(&rb);
+                let collected_consumer = Arc::clone(&collected);
+                s.spawn(move || {
+                    let mut count = 0usize;
+                    while count < ROUNDS * PER_ROUND {
+                        if let Some(v) = rb_consumer.pop() {
+                            collected_consumer.lock().unwrap().push(v);
+                            count += 1;
+                        } else {
+                            std::thread::yield_now();
+                        }
+                    }
+                });
+            });
+
+            let received = collected.lock().unwrap();
+            assert_eq!(received.len(), ROUNDS * PER_ROUND);
+            let expected: Vec<u64> = (0..ROUNDS as u64)
+                .flat_map(|round| (0..PER_ROUND as u64).map(move |i| round * 100 + i))
+                .collect();
+            assert_eq!(*received, expected);
+        });
+    }
+
+    /// A ring buffer of capacity 1 is broken: the single sequence number is
+    /// used both for "slot full" and "slot empty for the next lap", so a
+    /// producer can never observe a full buffer and will overwrite the resident
+    /// item instead of returning an error.
+    #[test]
+    fn capacity_one_allows_overwrite() {
+        model(|| {
+            use std::mem::{ManuallyDrop, forget};
+
+            // After one push the capacity-1 buffer is in a corrupted state if
+            // the bug is present (the slot is overwritten). Leak the buffer so
+            // that its Drop impl, which would spin forever in `pop`, is not
+            // executed regardless of whether the assertion passes.
+            let mut rb = ManuallyDrop::new(RingBuffer::<u64>::with_capacity(1));
+            dbg!(&rb);
+            rb.push(1).unwrap();
+            dbg!(&rb);
+            let push_result = rb.push(2);
+            dbg!(&rb);
+            let leaked = unsafe { ManuallyDrop::take(&mut rb) };
+            forget(leaked);
+
+            assert!(
+                push_result.is_err(),
+                "push into a full capacity-1 buffer must fail instead of overwriting"
+            );
+        });
+    }
+
+    /// `push_with_timeout` with a zero duration must return immediately when
+    /// the buffer is full and must not block or overwrite a resident item.
+    #[test]
+    fn push_timeout_zero_returns_immediately_when_full() {
+        model(|| {
+            let rb = RingBuffer::<u64>::with_capacity(2);
+            rb.push(1).unwrap();
+            rb.push(2).unwrap();
+            assert_eq!(
+                rb.push_with_timeout(3, Duration::from_secs(0)).unwrap_err(),
+                3
+            );
         });
     }
 }

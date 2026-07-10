@@ -73,6 +73,10 @@ mod barrier {
         /// happens under loom (which runs on a single OS thread), and mirrors the
         /// poisoning behavior of [`std::sync::Barrier`].
         pub fn wait(&self) {
+            if self.n == 0 {
+                return;
+            }
+
             let mut guard = self.state.lock().unwrap();
             let generation = guard.generation;
             guard.count += 1;
@@ -190,6 +194,34 @@ mod tests {
                 });
             });
             assert_eq!(count.load(Ordering::SeqCst), 4);
+        });
+    }
+
+    /// A barrier of size 0 is a degenerate no-op: there are zero threads to
+    /// synchronize, so `wait` must return immediately.
+    #[test]
+    fn barrier_of_zero_is_no_op() {
+        model(|| {
+            use std::sync::Arc;
+            use std::sync::mpsc;
+            use std::time::{Duration, Instant};
+
+            let barrier = Arc::new(Barrier::new(0));
+            let (tx, rx) = mpsc::channel();
+
+            let barrier_clone = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier_clone.wait();
+                let _ = tx.send(());
+            });
+
+            let start = Instant::now();
+            let result = rx.recv_timeout(Duration::from_millis(200));
+            assert!(
+                result.is_ok(),
+                "Barrier::new(0) should return immediately, but wait() deadlocked for at least {:?}",
+                start.elapsed()
+            );
         });
     }
 }
