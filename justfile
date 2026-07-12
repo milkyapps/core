@@ -7,7 +7,12 @@ ci RUN_LOOM="false":
     cargo bench
     cargo doc
 
-test-loom $LOOM_LOG="info" filter="":
+test-channel:
+    cargo t -- channel
+    cargo +nightly miri test -- channel
+    just test-loom channel
+
+test-loom filter="" $LOOM_LOG="info" :
     RUSTFLAGS="--cfg loom" \
     LOOM_MAX_PREEMPTIONS=2 \
     LOOM_MAX_BRANCHES=100000 \

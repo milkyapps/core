@@ -32,13 +32,14 @@
 //!
 //! let rb = RingBuffer::with_capacity(4);
 //! assert!(rb.push(1).is_ok());
-//! assert_eq!(rb.pop(), Some(1));
-//! assert_eq!(rb.pop(), None);
+//! assert_eq!(rb.pop().unwrap(), Some(1));
+//! assert_eq!(rb.pop().unwrap(), None);
 //! ```
 
 use crate::sync::AtomicUsize;
 use std::{
     cell::UnsafeCell,
+    hint::spin_loop,
     mem::MaybeUninit,
     sync::atomic::Ordering,
     time::{Duration, Instant},
@@ -101,7 +102,7 @@ impl<T> Drop for RingBuffer<T> {
         // uninitialized data and are correctly left untouched.
         let len = self.len.load(Ordering::Relaxed);
         for _ in 0..len {
-            self.pop();
+            self.pop().unwrap();
         }
     }
 }
@@ -129,7 +130,7 @@ impl<T> RingBuffer<T> {
         RingBuffer {
             slots: slots.into_boxed_slice(),
             cap: capacity,
-            mask: if capacity > 0 { capacity - 1 } else { 0 },
+            mask: if cap > 0 { cap - 1 } else { 0 },
             len: AtomicUsize::new(0),
             writer: AtomicUsize::new(0),
             reader: AtomicUsize::new(0),
@@ -143,11 +144,11 @@ impl<T> RingBuffer<T> {
     ///
     /// # Errors
     ///
-    /// Returns `Err(item)` if the buffer is full, with the item untouched.
+    /// Returns `Err(item)` if the buffer is full, with the item untouched,
+    /// or in high contention if thread keep losing and "never" manages
+    /// to insert the item.
     pub fn push(&self, item: T) -> Result<(), T> {
-        let max_duration = Duration::from_millis(1);
-        let mut park_duration = Duration::from_nanos(1);
-        loop {
+        for _ in 0..10 {
             // check we are not full
             let len = self.len.load(Ordering::Acquire);
             if len == self.cap {
@@ -185,14 +186,12 @@ impl<T> RingBuffer<T> {
                 // Queue is full
                 d if d < 0 => return Err(item),
                 _ => {
-                    std::thread::park_timeout(park_duration);
-                    park_duration *= 2;
-                    if park_duration > max_duration {
-                        park_duration = max_duration;
-                    }
+                    spin_loop();
                 }
             }
         }
+
+        Err(item)
     }
 
     /// Pushes `item`, retrying with a backoff until it succeeds or `duration`
@@ -226,10 +225,8 @@ impl<T> RingBuffer<T> {
     ///
     /// This is non-blocking: it returns `None` immediately when the buffer is
     /// empty rather than waiting for a producer.
-    pub fn pop(&self) -> Option<T> {
-        let max_duration = Duration::from_millis(1);
-        let mut park_duration = Duration::from_nanos(1);
-        loop {
+    pub fn pop(&self) -> Result<Option<T>, ()> {
+        for _ in 0..10 {
             let reader = self.reader.load(Ordering::Acquire);
             let slot = &self.slots[reader & self.mask];
             let seq = slot.sequence.load(Ordering::Acquire);
@@ -260,18 +257,16 @@ impl<T> RingBuffer<T> {
                         Ordering::Release,
                     );
                     self.len.fetch_sub(1, Ordering::Release);
-                    return Some(unsafe { item.assume_init() });
+                    return Ok(Some(unsafe { item.assume_init() }));
                 }
-                d if d < 0 => return None, // head not committed yet — empty
+                d if d < 0 => return Ok(None), // head not committed yet — empty
                 _ => {
-                    std::thread::park_timeout(park_duration);
-                    park_duration *= 2;
-                    if park_duration > max_duration {
-                        park_duration = max_duration;
-                    }
+                    spin_loop();
                 }
             }
         }
+
+        Err(())
     }
 }
 
@@ -300,10 +295,10 @@ mod tests {
             let rb = RingBuffer::with_capacity(2);
 
             rb.push(0u64).unwrap();
-            assert_eq!(rb.pop().unwrap(), 0);
+            assert_eq!(rb.pop().unwrap().unwrap(), 0);
 
             rb.push(1u64).unwrap();
-            assert_eq!(rb.pop().unwrap(), 1);
+            assert_eq!(rb.pop().unwrap().unwrap(), 1);
         });
     }
 
@@ -317,9 +312,9 @@ mod tests {
                 rb.push(i).unwrap();
             }
             for i in 0..8u64 {
-                assert_eq!(rb.pop(), Some(i));
+                assert_eq!(rb.pop().unwrap(), Some(i));
             }
-            assert_eq!(rb.pop(), None);
+            assert_eq!(rb.pop().unwrap(), None);
         });
     }
 
@@ -335,10 +330,10 @@ mod tests {
                     rb.push(base + i).unwrap();
                 }
                 for i in 0..4u64 {
-                    assert_eq!(rb.pop(), Some(base + i));
+                    assert_eq!(rb.pop().unwrap(), Some(base + i));
                 }
             }
-            assert_eq!(rb.pop(), None);
+            assert_eq!(rb.pop().unwrap(), None);
         });
     }
 
@@ -347,7 +342,7 @@ mod tests {
     fn pop_from_empty_buffer_returns_none() {
         model(|| {
             let rb = RingBuffer::<u64>::with_capacity(4);
-            assert_eq!(rb.pop(), None);
+            assert_eq!(rb.pop().unwrap(), None);
         });
     }
 
@@ -373,7 +368,7 @@ mod tests {
                     for _ in 0..SLOTS {
                         handles.push(s.spawn(|| {
                             barrier.wait();
-                            rb.pop().is_some()
+                            rb.pop().unwrap().is_some()
                         }));
                     }
 
@@ -423,7 +418,7 @@ mod tests {
                         if collected.load(Ordering::Relaxed) >= TOTAL {
                             return;
                         }
-                        if let Some(v) = r.pop() {
+                        if let Some(v) = r.pop().unwrap() {
                             let prev = collected.fetch_add(1, Ordering::Relaxed);
                             if prev < TOTAL {
                                 received.lock().unwrap().push(v);
@@ -489,7 +484,7 @@ mod tests {
     fn zero_capacity_request_is_safe() {
         model(|| {
             let rb = RingBuffer::<u64>::with_capacity(0);
-            assert_eq!(rb.pop(), None);
+            assert_eq!(rb.pop().unwrap(), None);
         });
     }
 
@@ -532,7 +527,7 @@ mod tests {
                 s.spawn(move || {
                     let mut count = 0usize;
                     while count < ROUNDS * PER_ROUND {
-                        if let Some(v) = rb_consumer.pop() {
+                        if let Some(v) = rb_consumer.pop().unwrap() {
                             collected_consumer.lock().unwrap().push(v);
                             count += 1;
                         } else {

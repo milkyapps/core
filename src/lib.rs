@@ -14,7 +14,7 @@ pub mod simd;
 /// Safe Memory Reclamation
 pub mod smr;
 /// Concurrency primitives
-pub(crate) mod sync;
+pub mod sync;
 /// Thread primitives
 pub(crate) mod thread;
 
