@@ -5,6 +5,8 @@
 
 /// Allocators
 pub mod allocators;
+/// Async runtime module.
+pub mod async_rt;
 // Pointer module
 pub(crate) mod ptr;
 /// SIMD helper functions
