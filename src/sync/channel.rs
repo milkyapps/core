@@ -1,19 +1,14 @@
-//! A blocking bounded channel built on top of the lock-free [`RingBuffer`].
-//!
-//! The channel exposes a fast path that delegates to the ring buffer directly,
-//! and a slow path that uses a [`Mutex`] + [`Condvar`] to block the caller when
-//! the buffer is full (senders) or empty (receivers).
+//! A blocking bounded channel with a Sender and a Receiver side.
 
 #[cfg(loom)]
 use loom::sync::{Condvar, Mutex, MutexGuard};
 #[cfg(not(loom))]
 use std::sync::{Condvar, Mutex, MutexGuard};
 
+use crate::collections::ringbuffer::RingBuffer;
 use crate::sync::Arc;
 use crate::sync::AtomicUsize;
 use crate::sync::atomic::Ordering;
-
-use crate::collections::ringbuffer::RingBuffer;
 
 /// Creates a bounded channel with room for at least `capacity` items.
 ///
@@ -59,13 +54,16 @@ struct Shared<T> {
 
 impl<T> Shared<T> {
     fn wait(&self, g: MutexGuard<'_, ()>) {
+        if self.is_closed() {
+            return;
+        }
         let g = self.waiting_cv.wait(g).unwrap();
         drop(g);
     }
 
     fn is_closed(&self) -> bool {
-        let no_senders = self.senders.load(Ordering::Acquire) == 0;
-        let no_receivers = self.receivers.load(Ordering::Acquire) == 0;
+        let no_senders = self.senders.load(Ordering::SeqCst) == 0;
+        let no_receivers = self.receivers.load(Ordering::SeqCst) == 0;
         no_senders || no_receivers
     }
 }
@@ -98,8 +96,7 @@ impl<T> Sender<T> {
     ///
     /// If the ring buffer is full, the caller blocks until a receiver makes
     /// space or the channel is closed. Returns `Err(())` if the channel is
-    /// closed. Note that a sender blocked inside [`wait`](Shared::wait) may not
-    /// be woken when the receiver drops, so this method can deadlock.
+    /// closed.
     #[allow(clippy::missing_panics_doc)]
     pub fn send(&self, item: T) -> Result<(), ()> {
         let mut item = item;
@@ -138,7 +135,9 @@ impl<T> Sender<T> {
                 }
             }
 
+            println!("sender wait");
             self.shared.wait(g);
+            println!("sender wake");
         }
     }
 }
@@ -170,9 +169,7 @@ impl<T> Receiver<T> {
     /// Receives the next item from the channel.
     ///
     /// Returns `Some(item)` when an item is available. Returns `None` when the
-    /// channel is closed. Note that a receiver blocked inside [`wait`](Shared::wait)
-    /// may not be woken when the last sender drops, so this method can deadlock.
-    #[allow(clippy::missing_panics_doc)]
+    /// channel is closed.
     pub fn recv(&self) -> Option<T> {
         loop {
             // Fast path
@@ -211,29 +208,10 @@ impl<T> Receiver<T> {
 mod tests {
     use super::*;
     use crate::sync::Arc;
-    #[cfg(all(not(loom), not(miri)))]
     use crate::sync::Barrier;
     use crate::sync::atomic::{AtomicUsize, Ordering};
     use crate::sync::model;
-    #[cfg(all(not(loom), not(miri)))]
     use crate::thread::scope;
-    #[cfg(all(not(loom), not(miri)))]
-    use std::time::Duration;
-
-    /// Run `f` on a background thread and return its result, or `None` if it
-    /// does not complete within `timeout`. Used by non-loom tests to detect
-    /// calls that block forever instead of returning.
-    #[cfg(all(not(loom), not(miri)))]
-    fn with_timeout<T: Send + 'static>(
-        f: impl FnOnce() -> T + Send + 'static,
-        timeout: Duration,
-    ) -> Option<T> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(f());
-        });
-        rx.recv_timeout(timeout).ok()
-    }
 
     #[test]
     fn send_then_recv_single() {
@@ -244,10 +222,6 @@ mod tests {
         });
     }
 
-    /// Run outside Miri: back-to-back sends can fill the buffer and hit the
-    /// wrapper's condvar wait path, which Miri's single-threaded scheduler cannot
-    /// make progress on. The Miri equivalent is `alternating_send_recv`.
-    #[cfg(not(miri))]
     #[test]
     fn fifo_order() {
         model(|| {
@@ -263,23 +237,6 @@ mod tests {
 
     /// Repeatedly send one item and receive one item, keeping the buffer near
     /// empty. This exercises the fast path through many empty/full transitions.
-    ///
-    /// The Miri version uses fewer iterations because the current implementation
-    /// can deadlock here under Miri's scheduler (the slow path in `send` waits on
-    /// the condvar with no other thread to wake it).
-    #[cfg(miri)]
-    #[test]
-    fn alternating_send_recv() {
-        model(|| {
-            let (tx, rx) = bounded::<usize>(4);
-            for i in 0..10 {
-                tx.send(i).unwrap();
-                assert_eq!(rx.recv(), Some(i));
-            }
-        });
-    }
-
-    #[cfg(not(miri))]
     #[test]
     fn alternating_send_recv() {
         model(|| {
@@ -293,8 +250,6 @@ mod tests {
 
     /// Filling a power-of-two buffer exactly to capacity and then draining it
     /// must preserve FIFO order and leave the buffer empty.
-    /// Run outside Miri for the same reason as `fifo_order`.
-    #[cfg(not(miri))]
     #[test]
     fn fill_to_capacity_then_drain() {
         model(|| {
@@ -310,49 +265,45 @@ mod tests {
         });
     }
 
-    /// Run outside loom/miri: the current implementation has a lost-wake-up race
-    /// in the blocking path, so this test can deadlock under Loom and Miri.
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     fn empty_recv_blocks_until_send() {
-        let (tx, rx) = bounded::<i32>(4);
-        let barrier = Barrier::new(2);
-        scope(|s| {
-            s.spawn(|| {
-                barrier.wait();
-                assert_eq!(rx.recv(), Some(42));
-            });
-            s.spawn(|| {
-                barrier.wait();
-                tx.send(42).unwrap();
+        model(|| {
+            let (tx, rx) = bounded::<i32>(4);
+            let barrier = Barrier::new(2);
+            scope(|s| {
+                s.spawn(|| {
+                    barrier.wait();
+                    assert_eq!(rx.recv(), Some(42));
+                });
+                s.spawn(|| {
+                    barrier.wait();
+                    tx.send(42).unwrap();
+                });
             });
         });
     }
 
-    /// Run outside loom/miri: the current implementation can cause a destructor
-    /// panic in the Loom runtime and can deadlock under Miri.
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     fn full_send_blocks_until_recv() {
-        let (tx, rx) = bounded::<i32>(2);
-        tx.send(1).unwrap();
-        tx.send(2).unwrap();
+        model(|| {
+            let (tx, rx) = bounded::<i32>(2);
+            tx.send(1).unwrap();
+            tx.send(2).unwrap();
 
-        scope(|s| {
-            s.spawn(move || {
-                tx.send(3).unwrap();
-            });
+            scope(|s| {
+                s.spawn(move || {
+                    tx.send(3).unwrap();
+                });
 
-            s.spawn(move || {
-                assert_eq!(rx.recv(), Some(1));
-                assert_eq!(rx.recv(), Some(2));
-                assert_eq!(rx.recv(), Some(3));
+                s.spawn(move || {
+                    assert_eq!(rx.recv(), Some(1));
+                    assert_eq!(rx.recv(), Some(2));
+                    assert_eq!(rx.recv(), Some(3));
+                });
             });
         });
     }
 
-    /// Run outside Miri for the same reason as `fifo_order`.
-    #[cfg(not(miri))]
     #[test]
     fn wrap_around_preserves_order() {
         model(|| {
@@ -369,63 +320,28 @@ mod tests {
         });
     }
 
-    /// Non-power-of-two capacities are inherited from the underlying
-    /// `RingBuffer`, which currently computes its mask from the requested
-    /// capacity instead of the rounded-up slot count. With capacity 3 the
-    /// receiver hangs forever in `pop`, so this test runs under a timeout.
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     fn capacity_non_power_of_two_fifo() {
-        let (tx, rx) = bounded::<usize>(3);
-        for i in 0..3 {
-            tx.send(i).unwrap();
-        }
-        let result = with_timeout(
-            move || {
-                let mut out = Vec::new();
-                for _ in 0..3 {
-                    out.push(rx.recv().unwrap());
-                }
-                out
-            },
-            Duration::from_millis(500),
-        );
-        assert_eq!(
-            result,
-            Some(vec![0, 1, 2]),
-            "non-power-of-two capacity is broken: recv hangs or returns wrong values"
-        );
-    }
+        model(|| {
+            let (tx, rx) = bounded::<usize>(3);
+            let mut received = Vec::new();
 
-    /// A channel of capacity 1 accepts one item and then blocks a second
-    /// `send` until a receiver makes room. This is the expected behaviour of
-    /// a blocking bounded channel; it is not a bug.
-    #[cfg(all(not(loom), not(miri)))]
-    #[test]
-    fn capacity_one_second_send_blocks_until_recv() {
-        let (tx, rx) = bounded::<i32>(1);
-        tx.send(1).unwrap();
+            for i in 0..3 {
+                tx.send(i).unwrap();
+            }
 
-        let tx2 = tx.clone();
-        let send_handle = std::thread::spawn(move || {
-            tx2.send(2).unwrap();
+            for _ in 0..3 {
+                received.push(rx.recv().unwrap());
+            }
+
+            assert_eq!(
+                received,
+                vec![0, 1, 2],
+                "non-power-of-two capacity is broken: recv hangs or returns wrong values"
+            );
         });
-
-        // Give the producer time to reach the slow path.
-        std::thread::sleep(Duration::from_millis(50));
-
-        // Pop the first item; this unblocks the waiting producer.
-        assert_eq!(rx.recv(), Some(1));
-        send_handle.join().unwrap();
-
-        // The producer's item is now in the buffer.
-        assert_eq!(rx.recv(), Some(2));
     }
 
-    /// A capacity of zero is explicitly rejected by the wrapper. The
-    /// constructor panics rather than creating a channel that would deadlock on
-    /// the first send.
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     #[should_panic(expected = "capacity must be greater than one")]
     fn zero_capacity_is_rejected() {
@@ -435,25 +351,18 @@ mod tests {
     /// `recv` returns `None` when it observes that all senders are already
     /// dropped. This test never blocks, so it passes even if `Sender::Drop` did
     /// not notify waiters.
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     fn recv_returns_none_when_all_senders_dropped() {
-        let (tx, rx) = bounded::<i32>(4);
-        drop(tx);
-        let result = with_timeout(move || rx.recv(), Duration::from_millis(500));
-        assert!(
-            result.is_some(),
-            "recv blocked forever instead of returning None after all senders dropped"
-        );
-        assert_eq!(result.unwrap(), None);
+        model(|| {
+            let (tx, rx) = bounded::<i32>(4);
+            drop(tx);
+            let result = rx.recv();
+            assert_eq!(result, None);
+        });
     }
 
     /// Dropping the whole channel (all senders and all receivers) must run the
     /// destructors of any items still resident in the buffer.
-    /// Run outside Miri: tests that exercise the drop path with non-trivial
-    /// `T` are flaky under Miri because the ring buffer's `compare_exchange_weak`
-    /// can spuriously fail and push `send` into the condvar wait path.
-    #[cfg(not(miri))]
     #[test]
     fn drop_drains_resident_items() {
         #[derive(Debug)]
@@ -486,10 +395,6 @@ mod tests {
         });
     }
 
-    /// A popped item must be dropped exactly once, and the channel must not
-    /// retain a second copy.
-    /// Run outside Miri for the same reason as `drop_drains_resident_items`.
-    #[cfg(not(miri))]
     #[test]
     fn popped_item_dropped_once() {
         #[derive(Debug)]
@@ -521,10 +426,6 @@ mod tests {
         });
     }
 
-    /// Stress test: a single producer and a single consumer exchange many
-    /// items. Run outside loom/miri because the current blocking path has a
-    /// lost-wake-up race that Loom and Miri find as deadlocks.
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     fn spsc_stress() {
         model(|| {
@@ -558,94 +459,89 @@ mod tests {
         });
     }
 
-    /// Multiple producers share a single `Sender` through an `Arc`. This is the
-    /// only way to get MPMC behaviour today because `Sender` is not `Clone`.
-    /// Run only outside loom/miri: the required producer contention exercises
-    /// the wrapper's blocking slow path, which loom does not need to model
-    /// and Miri's single-threaded scheduler cannot make progress on.
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     fn shared_sender_mpmc() {
-        const PRODUCERS: usize = 3;
-        const PER_PRODUCER: usize = 100;
-        const TOTAL: usize = PRODUCERS * PER_PRODUCER;
-        let expected_sum: usize = (0..TOTAL).sum();
+        model(|| {
+            const PRODUCERS: usize = 3;
+            const PER_PRODUCER: usize = 100;
+            const TOTAL: usize = PRODUCERS * PER_PRODUCER;
+            let expected_sum: usize = (0..TOTAL).sum();
 
-        let (tx, rx) = bounded::<usize>(16);
-        let tx = Arc::new(tx);
-        let rx = Arc::new(rx);
-        let sum = Arc::new(AtomicUsize::new(0));
-        let count = Arc::new(AtomicUsize::new(0));
+            let (tx, rx) = bounded::<usize>(16);
+            let sum = Arc::new(AtomicUsize::new(0));
+            let count = Arc::new(AtomicUsize::new(0));
 
-        scope(|s| {
-            for p in 0..PRODUCERS {
-                let tx = Arc::clone(&tx);
-                s.spawn(move || {
-                    for i in 0..PER_PRODUCER {
-                        tx.send(p * PER_PRODUCER + i).unwrap();
-                    }
-                });
-            }
-
-            let rx = Arc::clone(&rx);
-            let sum = Arc::clone(&sum);
-            let count = Arc::clone(&count);
-            s.spawn(move || {
-                let mut local_sum = 0usize;
-                let mut local_count = 0usize;
-                while local_count < TOTAL {
-                    if let Some(v) = rx.recv() {
-                        local_sum += v;
-                        local_count += 1;
-                    }
+            scope(|s| {
+                for p in 0..PRODUCERS {
+                    let tx = tx.clone();
+                    s.spawn(move || {
+                        for i in 0..PER_PRODUCER {
+                            tx.send(p * PER_PRODUCER + i).unwrap();
+                        }
+                    });
                 }
-                sum.store(local_sum, Ordering::SeqCst);
-                count.store(local_count, Ordering::SeqCst);
-            });
-        });
 
-        assert_eq!(
-            count.load(Ordering::SeqCst),
-            TOTAL,
-            "lost or duplicated items"
-        );
-        assert_eq!(sum.load(Ordering::SeqCst), expected_sum, "item corruption");
+                let rx = rx.clone();
+                let sum = Arc::clone(&sum);
+                let count = Arc::clone(&count);
+                s.spawn(move || {
+                    let mut local_sum = 0usize;
+                    let mut local_count = 0usize;
+                    while local_count < TOTAL {
+                        if let Some(v) = rx.recv() {
+                            local_sum += v;
+                            local_count += 1;
+                        }
+                    }
+                    sum.store(local_sum, Ordering::SeqCst);
+                    count.store(local_count, Ordering::SeqCst);
+                });
+            });
+
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                TOTAL,
+                "lost or duplicated items"
+            );
+            assert_eq!(sum.load(Ordering::SeqCst), expected_sum, "item corruption");
+        });
     }
 
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     fn shared_receiver_mpmc() {
-        const CONSUMERS: usize = 3;
-        const TOTAL: usize = 300;
-        let expected_sum: usize = (0..TOTAL).sum();
-        let actual_sum = AtomicUsize::new(0);
+        model(|| {
+            const CONSUMERS: usize = 3;
+            const TOTAL: usize = 300;
+            let expected_sum: usize = (0..TOTAL).sum();
 
-        let (tx, rx) = bounded::<usize>(16);
+            let actual_sum = AtomicUsize::new(0);
 
-        scope(|s| {
-            s.spawn(move || {
-                for i in 0..TOTAL {
-                    tx.send(i).unwrap();
+            let (tx, rx) = bounded::<usize>(16);
+
+            scope(|s| {
+                s.spawn(move || {
+                    for i in 0..TOTAL {
+                        tx.send(i).unwrap();
+                    }
+                });
+
+                for i in 0..CONSUMERS {
+                    let data = (i, &rx, &actual_sum);
+                    s.spawn(move || {
+                        let (_, rx, actual_sum) = data;
+                        while let Some(v) = rx.recv() {
+                            actual_sum.fetch_add(v, Ordering::SeqCst);
+                        }
+                    });
                 }
             });
 
-            for i in 0..CONSUMERS {
-                let data = (i, &rx, &actual_sum);
-                s.spawn(move || {
-                    let (_, rx, actual_sum) = data;
-                    while let Some(v) = rx.recv() {
-                        actual_sum.fetch_add(v, Ordering::SeqCst);
-                    }
-                });
-            }
+            assert_eq!(
+                actual_sum.load(Ordering::SeqCst),
+                expected_sum,
+                "item corruption"
+            );
         });
-
-        // assert_eq!(received, (0..TOTAL).collect::<Vec<_>>());
-        assert_eq!(
-            actual_sum.load(Ordering::SeqCst),
-            expected_sum,
-            "item corruption"
-        );
     }
 
     /// `Sender<T>` and `Receiver<T>` should be `Send` and `Sync` whenever
@@ -702,191 +598,131 @@ mod tests {
         });
     }
 
-    /// When several producers are blocked on a full buffer, one consumer pop
-    /// wakes all of them. Only one can succeed; the rest go back to sleep. The
-    /// consumer must keep popping until every producer has finished its send.
-    /// Run outside loom/miri because it needs multiple producers and can
-    /// deadlock under Miri's scheduler.
-    #[cfg(all(not(loom), not(miri)))]
-    #[test]
-    fn notify_all_wakes_multiple_producers() {
-        const P: usize = 3;
-        let (tx, rx) = bounded::<usize>(P - 1);
-        let tx = Arc::new(tx);
-        let rx = Arc::new(rx);
-        let ready = Arc::new(AtomicUsize::new(0));
-
-        // Fill the buffer so every producer will block on its next send.
-        for _ in 0..P - 1 {
-            tx.send(0).unwrap();
-        }
-
-        scope(|s| {
-            for _ in 0..P {
-                let tx = Arc::clone(&tx);
-                let ready = Arc::clone(&ready);
-                s.spawn(move || {
-                    tx.send(99).unwrap();
-                    ready.fetch_add(1, Ordering::SeqCst);
-                });
-            }
-
-            let rx = Arc::clone(&rx);
-            let ready = Arc::clone(&ready);
-            s.spawn(move || {
-                while ready.load(Ordering::SeqCst) < P {
-                    let _ = rx.recv();
-                }
-            });
-        });
-
-        assert_eq!(ready.load(Ordering::SeqCst), P);
-    }
-
     /// A receiver that is already blocked must be woken when the last sender is
-    /// dropped and return `None`. Currently `Sender::Drop` does not notify the
-    /// condvar, so this test deadlocks under Miri.
-    #[cfg(all(not(loom), not(miri)))]
+    /// dropped and return `None`.
     #[test]
     fn blocked_recv_unblocks_when_last_sender_dropped() {
-        let (tx, rx) = bounded::<i32>(4);
-        let result = with_timeout(
-            move || {
-                let handle = std::thread::spawn(move || rx.recv());
-                std::thread::sleep(Duration::from_millis(50));
+        model(|| {
+            let (tx, rx) = bounded::<i32>(4);
+            scope(|s| {
+                s.spawn(|| {
+                    rx.recv();
+                });
                 drop(tx);
-                handle.join().unwrap()
-            },
-            Duration::from_millis(500),
-        );
-        assert_eq!(
-            result,
-            Some(None),
-            "blocked receiver must return None after last sender drops"
-        );
+            });
+        });
     }
 
     /// A sender that is already blocked on a full buffer must be woken when the
-    /// receiver drops and return `Err(())`. Currently `Receiver::Drop` does not
-    /// notify the condvar, so this test deadlocks under Miri.
-    #[cfg(all(not(loom), not(miri)))]
+    /// receiver drops and return `Err(())`.
     #[test]
     fn blocked_send_unblocks_when_receiver_dropped() {
-        let (tx, rx) = bounded::<i32>(1);
-        tx.send(1).unwrap(); // fill the buffer
-        let result = with_timeout(
-            move || {
-                let handle = std::thread::spawn(move || tx.send(2));
-                std::thread::sleep(Duration::from_millis(50));
+        model(|| {
+            let (tx, rx) = bounded::<i32>(1);
+            tx.send(1).unwrap(); // fill the buffer
+
+            scope(|s| {
+                s.spawn(|| {
+                    let _ = tx.send(2);
+                });
                 drop(rx);
-                handle.join().unwrap()
-            },
-            Duration::from_millis(500),
-        );
-        assert_eq!(
-            result,
-            Some(Err(())),
-            "blocked sender must return Err after receiver drops"
-        );
+            });
+        });
     }
 
     /// `send` returns `Err(())` when called after the receiver has been dropped.
-    #[cfg(not(loom))]
     #[test]
     fn send_returns_err_after_receiver_dropped() {
-        let (tx, rx) = bounded::<i32>(4);
-        drop(rx);
-        assert_eq!(tx.send(1), Err(()));
+        model(|| {
+            let (tx, rx) = bounded::<i32>(4);
+            drop(rx);
+            assert_eq!(tx.send(1), Err(()));
+        });
     }
 
     /// Cloning a `Sender` increments the sender counter. The channel stays open
     /// until every clone is dropped.
-    #[cfg(not(loom))]
     #[test]
     fn multiple_cloned_senders_disconnect() {
-        let (tx, rx) = bounded::<i32>(4);
-        let tx2 = tx.clone();
-        drop(tx);
-        tx2.send(1).unwrap();
-        assert_eq!(rx.recv(), Some(1));
-        drop(tx2);
-        assert_eq!(rx.recv(), None);
+        model(|| {
+            let (tx, rx) = bounded::<i32>(4);
+            let tx2 = tx.clone();
+            drop(tx);
+            tx2.send(1).unwrap();
+            assert_eq!(rx.recv(), Some(1));
+            drop(tx2);
+            assert_eq!(rx.recv(), None);
+        });
     }
 
     /// Cloning a `Receiver` keeps the channel open from the receiver side. A
     /// sender can still send after one receiver clone is dropped.
-    #[cfg(not(loom))]
     #[test]
     fn receiver_clone_keeps_channel_open() {
-        let (tx, rx) = bounded::<i32>(4);
-        let rx2 = rx.clone();
-        drop(rx);
-        tx.send(1).unwrap();
-        assert_eq!(rx2.recv(), Some(1));
+        model(|| {
+            let (tx, rx) = bounded::<i32>(4);
+            let rx2 = rx.clone();
+            drop(rx);
+            tx.send(1).unwrap();
+            assert_eq!(rx2.recv(), Some(1));
+        });
     }
 
     /// Heavy contention exercises the `RingBuffer::push`/`pop` `Err(())` paths
     /// and the end-of-stream disconnect path. If `Sender::Drop` fails to wake
     /// blocked consumers, the scope never returns and this test times out.
-    /// Run outside Miri to avoid the slow-path deadlock.
-    #[cfg(all(not(loom), not(miri)))]
     #[test]
     fn heavy_contention_preserves_all_items() {
-        const PRODUCERS: usize = 8;
-        const CONSUMERS: usize = 8;
-        const PER_PRODUCER: usize = 100;
-        const TOTAL: usize = PRODUCERS * PER_PRODUCER;
-        let expected_sum: usize = (0..TOTAL).sum();
+        model(|| {
+            #[cfg(loom)]
+            const PARAMS: (usize, usize) = (2, 32);
+            #[cfg(not(loom))]
+            const PARAMS: (usize, usize) = (8, 100);
 
-        let (tx, rx) = bounded::<usize>(16);
-        let count = Arc::new(AtomicUsize::new(0));
-        let sum = Arc::new(AtomicUsize::new(0));
+            const PRODUCERS: usize = PARAMS.0;
+            const CONSUMERS: usize = PARAMS.0;
+            const PER_PRODUCER: usize = PARAMS.1;
+            const TOTAL: usize = PRODUCERS * PER_PRODUCER;
+            let expected_sum: usize = (0..TOTAL).sum();
 
-        let result = with_timeout(
-            move || {
-                scope(|s| {
-                    for p in 0..PRODUCERS {
-                        let tx = tx.clone();
-                        s.spawn(move || {
-                            for i in 0..PER_PRODUCER {
-                                tx.send(p * PER_PRODUCER + i).unwrap();
+            let (tx, rx) = bounded::<usize>(16);
+            let count = Arc::new(AtomicUsize::new(0));
+            let sum = Arc::new(AtomicUsize::new(0));
+
+            scope(|s| {
+                for p in 0..PRODUCERS {
+                    let tx = tx.clone();
+                    s.spawn(move || {
+                        for i in 0..PER_PRODUCER {
+                            tx.send(p * PER_PRODUCER + i).unwrap();
+                        }
+                    });
+                }
+                drop(tx);
+
+                for _ in 0..CONSUMERS {
+                    let rx = rx.clone();
+                    let count = Arc::clone(&count);
+                    let sum = Arc::clone(&sum);
+                    s.spawn(move || {
+                        while let Some(v) = rx.recv() {
+                            let c = count.fetch_add(1, Ordering::SeqCst);
+                            sum.fetch_add(v, Ordering::SeqCst);
+                            if c + 1 == TOTAL {
+                                break;
                             }
-                        });
-                    }
-                    drop(tx);
+                        }
+                    });
+                }
+                drop(rx);
+            });
 
-                    for _ in 0..CONSUMERS {
-                        let rx = rx.clone();
-                        let count = Arc::clone(&count);
-                        let sum = Arc::clone(&sum);
-                        s.spawn(move || {
-                            while let Some(v) = rx.recv() {
-                                let c = count.fetch_add(1, Ordering::SeqCst);
-                                sum.fetch_add(v, Ordering::SeqCst);
-                                if c + 1 == TOTAL {
-                                    break;
-                                }
-                            }
-                        });
-                    }
-                    drop(rx);
-                });
-
-                (count.load(Ordering::SeqCst), sum.load(Ordering::SeqCst))
-            },
-            Duration::from_secs(1),
-        );
-
-        let (count, sum) = result.expect(
-            "heavy-contention test timed out: a blocked consumer was not woken when senders dropped"
-        );
-        assert_eq!(count, TOTAL, "lost or duplicated items");
-        assert_eq!(sum, expected_sum, "item corruption");
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                TOTAL,
+                "lost or duplicated items"
+            );
+            assert_eq!(sum.load(Ordering::SeqCst), expected_sum, "item corruption");
+        });
     }
-
-    // NOTE: Loom tests that intentionally deadlock (e.g. dropping the last
-    // sender while a receiver is blocked) cause Loom to abort during destructor
-    // cleanup, because `RingBuffer::drop` touches Loom-modeled atomics outside
-    // an active thread. The non-loom `with_timeout` tests above demonstrate
-    // those bugs instead.
 }

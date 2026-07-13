@@ -137,6 +137,11 @@ impl<T> RingBuffer<T> {
         }
     }
 
+    /// Returns how many items the Ringbuffer has.
+    pub fn len(&self) -> usize {
+        self.len.load(Ordering::Relaxed)
+    }
+
     /// Pushes `item` to the tail of the buffer.
     ///
     /// This is non-blocking: if the buffer is full, the item is returned
@@ -163,7 +168,7 @@ impl<T> RingBuffer<T> {
                 0 => {
                     if self
                         .writer
-                        .compare_exchange_weak(
+                        .compare_exchange(
                             writer,
                             writer.wrapping_add(1),
                             Ordering::AcqRel,
@@ -235,7 +240,7 @@ impl<T> RingBuffer<T> {
                 0 => {
                     if self
                         .reader
-                        .compare_exchange_weak(
+                        .compare_exchange(
                             reader,
                             reader.wrapping_add(1),
                             Ordering::AcqRel,

@@ -7,10 +7,10 @@ ci RUN_LOOM="false":
     cargo bench
     cargo doc
 
-test-channel:
-    cargo t -- channel
-    cargo +nightly miri test -- channel
-    just test-loom channel
+test module:
+    cargo t -- {{module}}
+    cargo +nightly miri test -- {{module}}
+    just test-loom {{module}}
 
 test-loom filter="" $LOOM_LOG="info" :
     RUSTFLAGS="--cfg loom" \
