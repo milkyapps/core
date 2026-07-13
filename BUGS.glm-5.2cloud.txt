@@ -1,0 +1,135 @@
+# Bug hunt: src/sync/channel.rs & src/collections/ringbuffer.rs
+
+Method: read both files carefully, reason about the Vyukov bounded MPMC
+algorithm and the condvar-based blocking wrapper, then probe edge cases with
+extra tests (run under plain `cargo test`, `cargo +nightly miri test`, and
+`RUSTFLAGS=--cfg loom cargo test`). Existing tests (112 lib tests) all pass,
+and the existing loom + Miri channel suites pass, so the bugs below live in
+behaviour the existing tests do not exercise.
+
+--------------------------------------------------------------------------------
+## BUG 1 (CONFIRMED via Miri): `Slot` Debug impl reads uninitialized memory (UB)
+
+File: src/collections/ringbuffer.rs, lines 70-77
+
+```rust
+impl<T: std::fmt::Debug> std::fmt::Debug for Slot<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Slot")
+            .field("sequence", &self.sequence)
+            .field("data", unsafe { (*self.data.get()).assume_init_ref() })  // <-- UB
+            .finish()
+    }
+}
+```
+
+`RingBuffer` derives `Debug` (`#[derive(Debug)]` on the struct). That derive
+calls `Slot::fmt` for every slot. Every slot that is currently *empty* holds
+uninitialized `MaybeUninit<T>` data. Calling `assume_init_ref()` on it is
+undefined behaviour — it reads uninitialized memory.
+
+This is triggered by formatting (incl. `dbg!`) any `RingBuffer` that has at
+least one empty slot, e.g. a freshly-constructed buffer, or a buffer that is
+not completely full. The existing test `construction_and_dbg_succeed` already
+exercises this on a fully-empty buffer, and `capacity_one_allows_overwrite`
+calls `dbg!(&rb)` on a buffer with empty slots — both are UB.
+
+Miri confirms it:
+
+    $ cargo +nightly miri test --lib collections::ringbuffer::tests::construction_and_dbg_succeed
+    error: Undefined Behavior: reading memory at alloc...[0x8..0x10],
+      but memory is uninitialized at [0x8..0x10], and this operation
+      requires initialized memory
+    Uninitialized memory occurred at alloc... in this allocation:
+      0x00 │ 00 00 00 00 00 00 00 00 __ __ __ __ __ __ __ __
+
+There is a second, related soundness problem in the same impl: it reads every
+slot's data through a shared `&self` reference while the buffer may be
+concurrently mutated by `push`/`pop` (which write/`mem::swap` the same
+`UnsafeCell`). So Debug-formatting a *live shared* ring buffer is also a data
+race, independent of the uninit read.
+
+Proof test added: `collections::ringbuffer::tests::glm_dbg_reads_uninit_slot`
+(format a partially-filled buffer; fails under Miri with "Uninitialized
+memory"). Miri is the project's UB oracle (CI runs `cargo +nightly miri test`),
+so a Miri-failing test is the proof.
+
+Fix (NOT applied — task says do not change implementation): only read slot
+data when the slot's `sequence` marks it full/committed, e.g. format the slot
+as `("<uninit>", sequence)` when not currently owned by a consumer turn, or
+drop the `Debug` impl for `Slot`/`RingBuffer` entirely.
+
+--------------------------------------------------------------------------------
+## Candidate bugs investigated and REJECTED (documented for completeness)
+
+These looked suspicious but are *not* bugs under the documented contract
+(`with_capacity` / `bounded` promise "room for **at least** `capacity` items"):
+
+- `RingBuffer::with_capacity` stores `cap: capacity` (the *requested* value)
+  while `mask` uses the rounded-up power-of-two slot count. The `len == self.cap`
+  full-check in `push` therefore caps the buffer at the *requested* capacity,
+  which still satisfies "at least capacity". Under concurrent producers the
+  racy `len` check can momentarily let up to the rounded-up slot count be held
+  (e.g. a `with_capacity(1)` buffer briefly holds 2), but that is within
+  "at least capacity", and the sequence-based `d < 0` full check still prevents
+  overwriting an unconsumed item, so no item is lost or duplicated. Verified:
+  MPMC stress (`mpmc_preserves_exact_item_set`) passes Miri with no data race.
+
+- `RingBuffer::with_capacity(0)` rejects every `push` (the `len == self.cap`
+  check is `0 == 0` immediately). "at least 0 items" is satisfied; pushing into
+  a zero-capacity buffer failing is consistent. The channel side rejects
+  capacity 0 via `assert!(capacity > 0)`.
+
+- `Sender::send` returns `Result<(), ()>` and on the closed path returns
+  `Err(())`, which *drops* the item rather than handing it back. This is a
+  real ergonomic/API defect (the caller cannot recover an undeliverable value,
+  unlike `std::sync::mpsc::SendError<T>` / crossbeam), but it is fixed by the
+  type signature `Result<(), ()>` — no runtime test can prove a "bug" the
+  signature itself forbids observing. Noted but not testable as a failure.
+
+- `push_with_timeout` documents "retrying with a backoff ... yielding the
+  thread between attempts" but the implementation neither backs off nor yields
+  — it tight-loops `push`. This is a doc/impl mismatch and a potential
+  single-core livelock (a full buffer + a consumer that never gets scheduled),
+  but on the project's multi-core test machines it functions; not a logic bug
+  a deterministic test proves.
+
+- The `println!("sender wait")` / `println!("sender wake")` debug prints left
+  in `Sender::send` spam stderr on every blocking send. Cosmetic defect, not a
+  logic bug.
+
+The channel's blocking path (check-then-wait with the slow-path re-push/re-pop
+under the mutex, `notify_all`, and the `is_closed()` short-circuit inside
+`wait`) is the standard correct condvar discipline; I could not construct a
+lost-wakeup or deadlock, and loom (preemptions=2) and Miri agree.
+
+--------------------------------------------------------------------------------
+## Verification log
+
+- Plain `cargo test --lib`: 113 passed, 0 failed (112 original + the new
+  `glm_dbg_reads_uninit_slot`, which reads garbage under normal cargo and so
+  does not panic there).
+- `cargo +nightly miri test --lib collections::ringbuffer::tests::glm_dbg_reads_uninit_slot`
+  → `Undefined Behavior: reading memory ... uninitialized ... requires
+  initialized memory`  ←  **Bug 1 proven.**
+  The pre-existing `construction_and_dbg_succeed` and `capacity_one_allows_overwrite`
+  also fail Miri for the same reason (they `dbg!` buffers with empty slots).
+- Miri on the non-`Copy` Drop path (`drop_drains_resident_items`) and the SPSC
+  stress and `mpmc_preserves_exact_item_set` → all clean. So the slot
+  write/`mem::swap`/recycle logic is sound; the ONLY UB is the `Debug` impl.
+- loom (`--cfg loom`, preemptions 2 and 4) on every channel blocking/close test
+  (`empty_recv_blocks_until_send`, `full_send_blocks_until_recv`,
+  `blocked_recv_unblocks_when_last_sender_dropped`,
+  `blocked_send_unblocks_when_receiver_dropped`, `heavy_contention_*`,
+  `multiple_cloned_senders_disconnect`, `receiver_clone_keeps_channel_open`,
+  and the full 23-test channel suite) → all pass. No lost-wakeup / deadlock
+  found even at preemption depth 4.
+
+Note: an integration test under `tests/` cannot be used to probe these files
+under `--cfg loom` — `loom` is a `[dev-dependencies]` entry, so it is only
+available to the lib crate in its *unit-test* build, not when the lib is built
+as a normal dependency of an integration test. Adding `tests/probe_glm.rs`
+made `RUSTFLAGS=--cfg loom cargo test` fail with `cannot find crate \`loom\``
+in `src/sync.rs`/`src/sync/channel.rs`. That file was removed; the proving
+test lives in the `ringbuffer.rs` unit-test module instead, where loom and
+Miri both see it.

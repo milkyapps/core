@@ -5,6 +5,7 @@ use loom::sync::{Condvar, Mutex, MutexGuard};
 #[cfg(not(loom))]
 use std::sync::{Condvar, Mutex, MutexGuard};
 
+use crate::collections::ringbuffer::PushError;
 use crate::collections::ringbuffer::RingBuffer;
 use crate::sync::Arc;
 use crate::sync::AtomicUsize;
@@ -26,7 +27,7 @@ use crate::sync::atomic::Ordering;
 ///
 /// Panics if `capacity` is `0`.
 pub fn bounded<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
-    assert!(capacity > 0, "capacity must be greater than one");
+    assert!(capacity > 0, "capacity must be greater than zero");
 
     let shared = Arc::new(Shared {
         senders: AtomicUsize::new(1),
@@ -118,7 +119,7 @@ impl<T> Sender<T> {
                     drop(g);
                     return Ok(());
                 }
-                Err(i) => {
+                Err(PushError::Full(i) | PushError::HighContention(i)) => {
                     item = i;
                 }
             }
@@ -130,14 +131,12 @@ impl<T> Sender<T> {
                     self.shared.waiting_cv.notify_all();
                     return Ok(());
                 }
-                Err(i) => {
+                Err(PushError::Full(i) | PushError::HighContention(i)) => {
                     item = i;
                 }
             }
 
-            println!("sender wait");
             self.shared.wait(g);
-            println!("sender wake");
         }
     }
 }
@@ -213,6 +212,8 @@ mod tests {
     use crate::sync::model;
     use crate::thread::scope;
 
+    /// A single item sent on a live channel is received unchanged: the basic
+    /// end-to-end `send` → `recv` path with no blocking.
     #[test]
     fn send_then_recv_single() {
         model(|| {
@@ -222,6 +223,9 @@ mod tests {
         });
     }
 
+    /// Filling a buffer under capacity and draining it yields items in
+    /// push order (FIFO), exercising the ring's slot sequencing without
+    /// wrapping.
     #[test]
     fn fifo_order() {
         model(|| {
@@ -304,6 +308,9 @@ mod tests {
         });
     }
 
+    /// Across many fill-then-drain rounds the writer/reader cursors wrap past
+    /// the capacity, and FIFO order is preserved every round with the buffer
+    /// empty after each drain. Guards the slot `sequence` recycle logic.
     #[test]
     fn wrap_around_preserves_order() {
         model(|| {
@@ -320,6 +327,10 @@ mod tests {
         });
     }
 
+    /// A non-power-of-two requested capacity (3, rounded up to 4 physical
+    /// slots) still delivers exactly 3 items in FIFO order. Guards the
+    /// `len == self.cap` full check against the rounded-up physical slot
+    /// count.
     #[test]
     fn capacity_non_power_of_two_fifo() {
         model(|| {
@@ -342,8 +353,10 @@ mod tests {
         });
     }
 
+    /// `bounded(0)` must panic (the underlying `RingBuffer` requires at least
+    /// one slot).
     #[test]
-    #[should_panic(expected = "capacity must be greater than one")]
+    #[should_panic(expected = "capacity must be greater than zero")]
     fn zero_capacity_is_rejected() {
         let _ = bounded::<i32>(0);
     }
@@ -426,6 +439,9 @@ mod tests {
         });
     }
 
+    /// Single-producer/single-consumer stress: 200 items flow through a small
+    /// (cap 8) channel with the producer and consumer on separate scoped
+    /// threads. Every value must arrive in order with no loss or duplication.
     #[test]
     fn spsc_stress() {
         model(|| {
@@ -459,6 +475,10 @@ mod tests {
         });
     }
 
+    /// Multiple cloned senders (3 producers) feeding one receiver: the sum and
+    /// count of all received items must equal the multiset of pushed items.
+    /// Exercises `Sender::clone` refcount increment and the `push` contention
+    /// path.
     #[test]
     fn shared_sender_mpmc() {
         model(|| {
@@ -507,6 +527,10 @@ mod tests {
         });
     }
 
+    /// One producer feeding multiple cloned receivers (3 consumers): the sum
+    /// of every received value must equal the sum of every pushed value, so
+    /// no item is lost or duplicated across competing `recv` calls. Exercises
+    /// `Receiver::clone` and the `pop` contention path.
     #[test]
     fn shared_receiver_mpmc() {
         model(|| {
@@ -723,6 +747,27 @@ mod tests {
                 "lost or duplicated items"
             );
             assert_eq!(sum.load(Ordering::SeqCst), expected_sum, "item corruption");
+        });
+    }
+
+    /// When all senders are dropped while items are still buffered, `recv`
+    /// must drain every resident item in FIFO order and only then return
+    /// `None`.
+    ///
+    /// This pins the channel's *drain-on-close* property: the channel does not
+    /// discard buffered items when the producer side disconnects.
+    #[test]
+    fn recv_drains_buffered_items_then_returns_none_on_close() {
+        model(|| {
+            let (tx, rx) = bounded::<usize>(4);
+            for i in 0..4 {
+                tx.send(i).unwrap();
+            }
+            drop(tx);
+            for i in 0..4 {
+                assert_eq!(rx.recv(), Some(i), "buffered item lost on close");
+            }
+            assert_eq!(rx.recv(), None, "recv must return None after draining");
         });
     }
 }

@@ -4,10 +4,15 @@
 #[allow(unused_imports)]
 pub(crate) use std::thread::scope;
 
+#[cfg(not(loom))]
+#[allow(unused_imports)]
+pub use std::thread::yield_now;
+
 #[cfg(loom)]
 mod inner {
     use std::cell::RefCell;
     use std::marker::PhantomData;
+    pub use std::thread::yield_now;
 
     pub struct Scope<'env> {
         handles: RefCell<Vec<loom::thread::JoinHandle<()>>>,

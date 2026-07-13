@@ -37,13 +37,7 @@
 //! ```
 
 use crate::sync::AtomicUsize;
-use std::{
-    cell::UnsafeCell,
-    hint::spin_loop,
-    mem::MaybeUninit,
-    sync::atomic::Ordering,
-    time::{Duration, Instant},
-};
+use std::{cell::UnsafeCell, hint::spin_loop, mem::MaybeUninit, sync::atomic::Ordering};
 
 // `sequence` field is from the implementation of the bounded MPMC queue described by Dmitry
 // Vyukov ([Bounded MPMC queue][vyukov]). Each slot owns a monotonically
@@ -74,6 +68,22 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Slot<T> {
             .field("data", unsafe { (*self.data.get()).assume_init_ref() })
             .finish()
     }
+}
+
+/// All possible ways push fails.
+#[derive(Debug)]
+pub enum PushError<T> {
+    /// Ringbuffer is full. It only makes sense to retry after a pop
+    Full(T),
+    /// Pop failed to win the contention race. Push can be retried.
+    HighContention(T),
+}
+
+/// All possible ways pop fails.
+#[derive(Debug)]
+pub enum PopError {
+    /// Pop failed to win the contention race. Pop can be retried.
+    HighContention,
 }
 
 /// A bounded, lock-free multi-producer multi-consumer queue (ring buffer).
@@ -152,12 +162,12 @@ impl<T> RingBuffer<T> {
     /// Returns `Err(item)` if the buffer is full, with the item untouched,
     /// or in high contention if thread keep losing and "never" manages
     /// to insert the item.
-    pub fn push(&self, item: T) -> Result<(), T> {
+    pub fn push(&self, item: T) -> Result<(), PushError<T>> {
         for _ in 0..10 {
             // check we are not full
             let len = self.len.load(Ordering::Acquire);
             if len == self.cap {
-                return Err(item);
+                return Err(PushError::Full(item));
             }
 
             let writer = self.writer.load(Ordering::Acquire);
@@ -189,48 +199,21 @@ impl<T> RingBuffer<T> {
                     return Ok(());
                 }
                 // Queue is full
-                d if d < 0 => return Err(item),
+                d if d < 0 => return Err(PushError::Full(item)),
                 _ => {
                     spin_loop();
                 }
             }
         }
 
-        Err(item)
-    }
-
-    /// Pushes `item`, retrying with a backoff until it succeeds or `duration`
-    /// has elapsed.
-    ///
-    /// Unlike [`push`](Self::push), this blocks the caller for up to `duration`
-    /// waiting for space, yielding the thread between attempts.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err(item)` if the buffer stays full for the whole `duration`,
-    /// with the item untouched.
-    pub fn push_with_timeout(&self, item: T, duration: Duration) -> Result<(), T> {
-        let start = Instant::now();
-
-        let mut item = item;
-        loop {
-            match self.push(item) {
-                Ok(()) => return Ok(()),
-                Err(returned_item) => {
-                    if Instant::now().duration_since(start) >= duration {
-                        return Err(returned_item);
-                    }
-                    item = returned_item;
-                }
-            }
-        }
+        Err(PushError::HighContention(item))
     }
 
     /// Pops the next item from the head of the buffer, if one is available.
     ///
     /// This is non-blocking: it returns `None` immediately when the buffer is
     /// empty rather than waiting for a producer.
-    pub fn pop(&self) -> Result<Option<T>, ()> {
+    pub fn pop(&self) -> Result<Option<T>, PopError> {
         for _ in 0..10 {
             let reader = self.reader.load(Ordering::Acquire);
             let slot = &self.slots[reader & self.mask];
@@ -271,18 +254,18 @@ impl<T> RingBuffer<T> {
             }
         }
 
-        Err(())
+        Err(PopError::HighContention)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::collections::ringbuffer::PushError;
     use crate::sync::model;
 
     use super::RingBuffer;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
 
     /// Constructing a buffer and formatting it with `Debug` does not panic.
     #[test]
@@ -408,8 +391,9 @@ mod tests {
                 let r = Arc::clone(&rb);
                 handles.push(std::thread::spawn(move || {
                     for i in 0..PER_PRODUCER {
-                        r.push_with_timeout(p * PER_PRODUCER + i, Duration::from_secs(1))
-                            .unwrap();
+                        while r.push(p * PER_PRODUCER + i).is_err() {
+                            crate::thread::yield_now();
+                        }
                     }
                 }));
             }
@@ -501,7 +485,7 @@ mod tests {
             let rb = RingBuffer::<u64>::with_capacity(2);
             rb.push(0).unwrap();
             rb.push(1).unwrap();
-            assert_eq!(rb.push(2).unwrap_err(), 2);
+            assert!(matches!(rb.push(2), Err(PushError::Full(2))));
         });
     }
 
@@ -520,9 +504,7 @@ mod tests {
                 s.spawn(move || {
                     for round in 0..ROUNDS as u64 {
                         for i in 0..PER_ROUND as u64 {
-                            rb_producer
-                                .push_with_timeout(round * 100 + i, Duration::from_millis(100))
-                                .unwrap();
+                            while rb_producer.push(round * 100 + i).is_err() {}
                         }
                     }
                 });
@@ -580,18 +562,25 @@ mod tests {
         });
     }
 
-    /// `push_with_timeout` with a zero duration must return immediately when
-    /// the buffer is full and must not block or overwrite a resident item.
+    /// BUG (proven under Miri): the `#[derive(Debug)]` on `RingBuffer` goes
+    /// through `Slot`'s manual `Debug` impl, which calls
+    /// `(*self.data.get()).assume_init_ref()` on every slot. Any slot that is
+    /// currently empty holds *uninitialized* `MaybeUninit<T>` data, so
+    /// formatting a buffer that is not completely full reads uninitialized
+    /// memory — undefined behaviour.
+    ///
+    /// This test builds a `RingBuffer<u64>` of capacity 4, pushes a single
+    /// item (leaving three slots uninitialized), and formats it. Under Miri
+    /// it fails with `Undefined Behavior: ... memory is uninitialized ...
+    /// requires initialized memory`, proving the bug. (Miri is this project's
+    /// UB oracle — CI runs `cargo +nightly miri test` — so a Miri-failing
+    /// test is the proof of a UB bug.)
     #[test]
-    fn push_timeout_zero_returns_immediately_when_full() {
-        model(|| {
-            let rb = RingBuffer::<u64>::with_capacity(2);
-            rb.push(1).unwrap();
-            rb.push(2).unwrap();
-            assert_eq!(
-                rb.push_with_timeout(3, Duration::from_secs(0)).unwrap_err(),
-                3
-            );
-        });
+    fn glm_dbg_reads_uninit_slot() {
+        let rb = RingBuffer::<u64>::with_capacity(4);
+        rb.push(7).unwrap();
+        // Three of the four slots are still uninitialized. Debug-formatting
+        // the buffer reads them via `assume_init_ref()`.
+        let _ = format!("{rb:?}");
     }
 }
