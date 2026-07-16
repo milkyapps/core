@@ -1,6 +1,6 @@
 //! Worker thread loop for the async runtime.
 
-use crate::{async_rt::task::Task, sync::channel::Receiver};
+use crate::{async_rt::task::Task, sync::bounded::Receiver};
 use std::sync::Arc;
 
 /// Spawns a worker thread that pulls tasks from the queue until shutdown.

@@ -10,7 +10,7 @@ use std::task::{Context, Poll};
 
 use crate::async_rt::join_handle::Joinable;
 use crate::async_rt::waker::waker_from_task;
-use crate::sync::channel::Sender;
+use crate::sync::bounded::Sender;
 
 /// A runnable unit of work.
 ///

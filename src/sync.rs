@@ -1,7 +1,7 @@
 //! Re-exports [`std::sync`] (and [`std::cell::UnsafeCell`]) in normal builds, and
 //! the equivalent [`loom`] primitives when the `loom` cfg is enabled.
 
-pub mod channel;
+pub mod bounded;
 
 // `UnsafeCell` is always re-exported from `std`: loom's `UnsafeCell` exposes a
 // different API (its `get` returns `ConstPtr`/`MutPtr` rather than `*mut T`) and

@@ -4,10 +4,10 @@ use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
-use crate::async_rt::join_handle::{JoinCell, JoinHandle, Joinable};
+use crate::async_rt::join_handle::{JoinCell, JoinHandle};
 use crate::async_rt::task::Task;
 use crate::async_rt::worker;
-use crate::sync::channel::{Receiver, Sender, bounded};
+use crate::sync::bounded::{Receiver, Sender, bounded};
 
 /// Shared state between a [`Runtime`] and its [`Handle`]s.
 struct Shared {
@@ -188,17 +188,15 @@ impl Handle {
         F::Output: Send + 'static,
     {
         let join = Arc::new(JoinCell::<F::Output>::new());
-        let join_clone = join.clone();
-        let join_dyn: Arc<dyn Joinable + Send + Sync> = join.clone();
 
-        let wrapped = async move {
-            let result = future.await;
-            // SAFETY: This cell is private to the spawned task and is read
-            // only after `is_done()` becomes true.
-            unsafe { join_clone.set_output(result) };
+        let future = {
+            let join = join.clone();
+            async move {
+                let result = future.await;
+                join.store(result);
+            }
         };
-
-        let task = Task::new(wrapped, self.shared.sender.clone(), Some(join_dyn));
+        let task = Task::new(future, self.shared.sender.clone(), Some(join.clone()));
         task.schedule();
 
         JoinHandle { inner: join }

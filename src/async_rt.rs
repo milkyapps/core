@@ -23,6 +23,7 @@
 //! assert_eq!(value, 42);
 //! ```
 
+pub(crate) mod atomic_waker;
 pub mod join_handle;
 pub mod runtime;
 pub mod task;
