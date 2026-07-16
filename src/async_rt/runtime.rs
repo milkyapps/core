@@ -7,11 +7,12 @@ use std::sync::Arc;
 use crate::async_rt::join_handle::{JoinCell, JoinHandle, Joinable};
 use crate::async_rt::task::Task;
 use crate::async_rt::worker;
-use crate::sync::channel::{Sender, bounded};
+use crate::sync::channel::{Receiver, Sender, bounded};
 
 /// Shared state between a [`Runtime`] and its [`Handle`]s.
 struct Shared {
     sender: Sender<Arc<Task>>,
+    receiver: Receiver<Arc<Task>>,
 }
 
 impl fmt::Debug for Shared {
@@ -23,8 +24,7 @@ impl fmt::Debug for Shared {
 /// A thread-pool based async runtime.
 ///
 /// The runtime owns a fixed number of worker threads that pull tasks from a
-/// shared queue. The thread that creates the runtime can drive futures to
-/// completion with [`Runtime::block_on`].
+/// shared channel.
 pub struct Runtime {
     shared: Arc<Shared>,
     threads: Vec<crate::thread::JoinHandle<()>>,
@@ -48,14 +48,15 @@ impl Runtime {
     /// only happens for extremely large values.
     #[must_use]
     pub fn new(worker_threads: usize) -> Runtime {
-        let (sender, receiver) = bounded(1024);
+        let capacity = (worker_threads * 1024).max(1024);
+        let (sender, receiver) = bounded(capacity);
 
         let mut threads = Vec::with_capacity(worker_threads);
         for _ in 0..worker_threads {
             threads.push(worker::spawn(receiver.clone()));
         }
 
-        let shared = Arc::new(Shared { sender });
+        let shared = Arc::new(Shared { sender, receiver });
         Runtime { shared, threads }
     }
 
@@ -69,9 +70,8 @@ impl Runtime {
 
     /// Runs a future to completion on the current thread.
     ///
-    /// The calling thread drives the root future directly. While the root
-    /// future is pending, it polls runnable tasks from the shared queue so that
-    /// spawned tasks make progress.
+    /// The calling thread drives the root future directly. `Runtime` must
+    /// have worker threads to drive other tasks into completion.
     pub fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future + Send + 'static,
@@ -90,14 +90,18 @@ impl Runtime {
                 Poll::Pending => {}
             }
 
-            #[cfg(not(loom))]
-            {
-                std::thread::park_timeout(std::time::Duration::from_millis(1));
-            }
+            if let Some(task) = self.shared.receiver.try_recv() {
+                task.run();
+            } else {
+                #[cfg(not(loom))]
+                {
+                    std::thread::park_timeout(std::time::Duration::from_millis(1));
+                }
 
-            #[cfg(loom)]
-            {
-                loom::thread::yield_now();
+                #[cfg(loom)]
+                {
+                    loom::thread::yield_now();
+                }
             }
         }
     }

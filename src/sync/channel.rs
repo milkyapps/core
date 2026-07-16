@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicIsize;
 #[cfg(not(loom))]
 use std::sync::{Condvar, Mutex, MutexGuard};
 
+use crate::collections::ringbuffer::PopError;
 use crate::collections::ringbuffer::PushError;
 use crate::collections::ringbuffer::RingBuffer;
 use crate::sync::Arc;
@@ -204,6 +205,8 @@ impl<T> Receiver<T> {
     ///
     /// Returns `Some(item)` when an item is available. Returns `None` when the
     /// channel is closed.
+    ///
+    /// This methods blocks waiting for the item to arrive.
     #[must_use]
     pub fn recv(&self) -> Option<T> {
         loop {
@@ -237,6 +240,43 @@ impl<T> Receiver<T> {
             }
 
             self.shared.wait(g);
+        }
+    }
+
+    /// Try to receives the next item from the channel, returning immediatly if none
+    /// is found. This method does not blocks.
+    ///
+    /// Returns `Some(item)` when an item is available. Returns `None` when the
+    /// channel is closed.
+    pub fn try_recv(&self) -> Option<T> {
+        loop {
+            // Fast path
+            match self.shared.buffer.pop() {
+                Ok(Some(item)) => {
+                    let g = self
+                        .shared
+                        .waiting
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    self.shared.waiting_cv.notify_all();
+                    drop(g);
+                    return Some(item);
+                }
+                Ok(None) => {
+                    // check channel is closed or not
+                    if self.shared.is_closed() {
+                        self.shared.waiting_cv.notify_all();
+                    }
+                    if self.shared.is_closed() {
+                        self.shared.waiting_cv.notify_all();
+                        return None;
+                    }
+                    return None;
+                }
+                Err(PopError::HighContention) => {}
+            }
+
+            // pop cannot wait if channel is closed
         }
     }
 
