@@ -116,18 +116,19 @@ impl Runtime {
     fn shutdown_impl(&mut self) -> bool {
         self.shared.sender.shutdown();
 
-        let mut clean_shutdown = true;
-
         #[cfg(loom)]
         {
+            let clean_shutdown = true;
             for t in self.threads.drain(..) {
                 let _ = t.join();
             }
+            clean_shutdown
         }
 
         #[cfg(not(loom))]
         {
             use std::time::{Duration, Instant};
+            let mut clean_shutdown = true;
             let deadline = Instant::now() + Duration::from_secs(10);
             for t in self.threads.drain(..) {
                 while Instant::now() < deadline && !t.is_finished() {
@@ -141,9 +142,8 @@ impl Runtime {
                     clean_shutdown = false;
                 }
             }
+            clean_shutdown
         }
-
-        clean_shutdown
     }
 }
 

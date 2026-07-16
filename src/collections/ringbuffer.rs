@@ -37,7 +37,7 @@
 //! ```
 
 use crate::sync::AtomicUsize;
-use std::{cell::UnsafeCell, hint::spin_loop, mem::MaybeUninit, sync::atomic::Ordering};
+use std::{cell::UnsafeCell, hint::spin_loop, sync::atomic::Ordering};
 
 // `sequence` field is from the implementation of the bounded MPMC queue described by Dmitry
 // Vyukov ([Bounded MPMC queue][vyukov]). Each slot owns a monotonically
@@ -56,18 +56,10 @@ use std::{cell::UnsafeCell, hint::spin_loop, mem::MaybeUninit, sync::atomic::Ord
 //
 // [vyukov]: https://web.archive.org/web/20110410230018/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
 //
+#[derive(Debug)]
 struct Slot<T> {
     sequence: AtomicUsize,
-    data: UnsafeCell<MaybeUninit<T>>,
-}
-
-impl<T: std::fmt::Debug> std::fmt::Debug for Slot<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Slot")
-            .field("sequence", &self.sequence)
-            .field("data", unsafe { (*self.data.get()).assume_init_ref() })
-            .finish()
-    }
+    data: UnsafeCell<Option<T>>,
 }
 
 /// All possible ways push fails.
@@ -133,7 +125,7 @@ impl<T> RingBuffer<T> {
         for i in 0..cap {
             slots.push(Slot {
                 sequence: AtomicUsize::new(i),
-                data: UnsafeCell::new(MaybeUninit::uninit()),
+                data: UnsafeCell::new(None),
             });
         }
 
@@ -196,7 +188,7 @@ impl<T> RingBuffer<T> {
 
                     // SAFETY: we won the cursor CAS, so this slot's data is ours
                     // alone until we publish it by advancing the sequence.
-                    unsafe { (*slot.data.get()).write(item) };
+                    unsafe { (*slot.data.get()) = Some(item) };
 
                     slot.sequence
                         .store(writer.wrapping_add(1), Ordering::Release);
@@ -247,16 +239,15 @@ impl<T> RingBuffer<T> {
 
                     // SAFETY: we won the cursor CAS, so this slot's data is ours
                     // to read until we recycle it by advancing the sequence.
-                    let data = unsafe { &mut *slot.data.get() };
-                    let mut item = MaybeUninit::uninit();
-                    std::mem::swap(data, &mut item);
+                    let item = unsafe { (*slot.data.get()).take().unwrap_unchecked() };
 
                     slot.sequence.store(
                         reader.wrapping_add(self.mask).wrapping_add(1),
                         Ordering::Release,
                     );
                     self.len.fetch_sub(1, Ordering::Release);
-                    return Ok(Some(unsafe { item.assume_init() }));
+
+                    return Ok(Some(item));
                 }
                 d if d < 0 => return Ok(None), // head not committed yet — empty
                 _ => {
