@@ -2,13 +2,13 @@
 
 #[cfg(loom)]
 use loom::sync::{Condvar, Mutex, MutexGuard};
+use std::sync::atomic::AtomicIsize;
 #[cfg(not(loom))]
 use std::sync::{Condvar, Mutex, MutexGuard};
 
 use crate::collections::ringbuffer::PushError;
 use crate::collections::ringbuffer::RingBuffer;
 use crate::sync::Arc;
-use crate::sync::AtomicUsize;
 use crate::sync::atomic::Ordering;
 
 /// Creates a bounded channel with room for at least `capacity` items.
@@ -26,12 +26,13 @@ use crate::sync::atomic::Ordering;
 /// # Panics
 ///
 /// Panics if `capacity` is `0`.
+#[must_use]
 pub fn bounded<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
     assert!(capacity > 0, "capacity must be greater than zero");
 
     let shared = Arc::new(Shared {
-        senders: AtomicUsize::new(1),
-        receivers: AtomicUsize::new(1),
+        senders: AtomicIsize::new(1),
+        receivers: AtomicIsize::new(1),
         waiting: Mutex::new(()),
         waiting_cv: Condvar::new(),
         buffer: RingBuffer::with_capacity(capacity),
@@ -46,8 +47,8 @@ pub fn bounded<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
 }
 
 struct Shared<T> {
-    senders: AtomicUsize,
-    receivers: AtomicUsize,
+    senders: AtomicIsize,
+    receivers: AtomicIsize,
     waiting: Mutex<()>,
     waiting_cv: Condvar,
     buffer: RingBuffer<T>,
@@ -63,8 +64,8 @@ impl<T> Shared<T> {
     }
 
     fn is_closed(&self) -> bool {
-        let no_senders = self.senders.load(Ordering::SeqCst) == 0;
-        let no_receivers = self.receivers.load(Ordering::SeqCst) == 0;
+        let no_senders = self.senders.load(Ordering::SeqCst) <= 0;
+        let no_receivers = self.receivers.load(Ordering::SeqCst) <= 0;
         no_senders || no_receivers
     }
 }
@@ -92,29 +93,47 @@ impl<T> Drop for Sender<T> {
     }
 }
 
+/// Possible errors when sending items to the channel
+#[derive(Debug)]
+pub enum SendError {
+    /// Channel is already closed
+    ChannelClosed,
+}
+
 impl<T> Sender<T> {
     /// Sends `item` to the channel.
     ///
     /// If the ring buffer is full, the caller blocks until a receiver makes
     /// space or the channel is closed. Returns `Err(())` if the channel is
     /// closed.
-    #[allow(clippy::missing_panics_doc)]
-    pub fn send(&self, item: T) -> Result<(), ()> {
+    ///
+    /// # Errors
+    ///
+    /// `send` can fail if the channel is already closed.
+    pub fn send(&self, item: T) -> Result<(), SendError> {
         let mut item = item;
 
         loop {
             // Cannot send if channel is closed
             if self.shared.is_closed() {
-                let g = self.shared.waiting.lock().unwrap();
+                let g = self
+                    .shared
+                    .waiting
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 self.shared.waiting_cv.notify_all();
                 drop(g);
-                return Err(());
+                return Err(SendError::ChannelClosed);
             }
 
             // Fast path
             match self.shared.buffer.push(item) {
                 Ok(()) => {
-                    let g = self.shared.waiting.lock().unwrap();
+                    let g = self
+                        .shared
+                        .waiting
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     self.shared.waiting_cv.notify_all();
                     drop(g);
                     return Ok(());
@@ -125,7 +144,11 @@ impl<T> Sender<T> {
             }
 
             // Slow path
-            let g = self.shared.waiting.lock().unwrap();
+            let g = self
+                .shared
+                .waiting
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             match self.shared.buffer.push(item) {
                 Ok(()) => {
                     self.shared.waiting_cv.notify_all();
@@ -138,6 +161,18 @@ impl<T> Sender<T> {
 
             self.shared.wait(g);
         }
+    }
+
+    /// Immediately shutdow the channel
+    pub fn shutdown(&self) {
+        self.shared.senders.store(-100_000, Ordering::SeqCst);
+        let g = self
+            .shared
+            .waiting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.shared.waiting_cv.notify_all();
+        drop(g);
     }
 }
 
@@ -169,27 +204,30 @@ impl<T> Receiver<T> {
     ///
     /// Returns `Some(item)` when an item is available. Returns `None` when the
     /// channel is closed.
+    #[must_use]
     pub fn recv(&self) -> Option<T> {
         loop {
             // Fast path
-            match self.shared.buffer.pop() {
-                Ok(Some(item)) => {
-                    let g = self.shared.waiting.lock().unwrap();
-                    self.shared.waiting_cv.notify_all();
-                    drop(g);
-                    return Some(item);
-                }
-                _ => {}
+            if let Ok(Some(item)) = self.shared.buffer.pop() {
+                let g = self
+                    .shared
+                    .waiting
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                self.shared.waiting_cv.notify_all();
+                drop(g);
+                return Some(item);
             }
 
             // Slow path
-            let g = self.shared.waiting.lock().unwrap();
-            match self.shared.buffer.pop() {
-                Ok(Some(item)) => {
-                    self.shared.waiting_cv.notify_all();
-                    return Some(item);
-                }
-                _ => {}
+            let g = self
+                .shared
+                .waiting
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Ok(Some(item)) = self.shared.buffer.pop() {
+                self.shared.waiting_cv.notify_all();
+                return Some(item);
             }
 
             // pop cannot wait if channel is closed
@@ -200,6 +238,18 @@ impl<T> Receiver<T> {
 
             self.shared.wait(g);
         }
+    }
+
+    /// Immediately shutdow the channel
+    pub fn shutdown(&self) {
+        self.shared.receivers.store(-100_000, Ordering::SeqCst);
+        let g = self
+            .shared
+            .waiting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.shared.waiting_cv.notify_all();
+        drop(g);
     }
 }
 
@@ -630,7 +680,7 @@ mod tests {
             let (tx, rx) = bounded::<i32>(4);
             scope(|s| {
                 s.spawn(|| {
-                    rx.recv();
+                    let _ = rx.recv();
                 });
                 drop(tx);
             });
@@ -660,7 +710,7 @@ mod tests {
         model(|| {
             let (tx, rx) = bounded::<i32>(4);
             drop(rx);
-            assert_eq!(tx.send(1), Err(()));
+            assert!(matches!(tx.send(1), Err(SendError::ChannelClosed)));
         });
     }
 

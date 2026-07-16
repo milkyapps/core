@@ -3,24 +3,20 @@
 use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 use crate::async_rt::join_handle::{JoinCell, JoinHandle, Joinable};
-use crate::async_rt::queue::Queue;
 use crate::async_rt::task::Task;
 use crate::async_rt::worker;
+use crate::sync::channel::{Sender, bounded};
 
 /// Shared state between a [`Runtime`] and its [`Handle`]s.
 struct Shared {
-    queue: Arc<Queue>,
+    sender: Sender<Arc<Task>>,
 }
 
 impl fmt::Debug for Shared {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Shared")
-            .field("queue", &self.queue)
-            .finish()
+        f.debug_struct("Shared").finish()
     }
 }
 
@@ -31,7 +27,7 @@ impl fmt::Debug for Shared {
 /// completion with [`Runtime::block_on`].
 pub struct Runtime {
     shared: Arc<Shared>,
-    threads: Vec<thread::JoinHandle<()>>,
+    threads: Vec<crate::thread::JoinHandle<()>>,
 }
 
 impl fmt::Debug for Runtime {
@@ -52,16 +48,14 @@ impl Runtime {
     /// only happens for extremely large values.
     #[must_use]
     pub fn new(worker_threads: usize) -> Runtime {
-        let queue = Queue::new();
-        let shared = Arc::new(Shared {
-            queue: queue.clone(),
-        });
-        let mut threads = Vec::with_capacity(worker_threads);
+        let (sender, receiver) = bounded(1024);
 
+        let mut threads = Vec::with_capacity(worker_threads);
         for _ in 0..worker_threads {
-            threads.push(worker::spawn(queue.clone()));
+            threads.push(worker::spawn(receiver.clone()));
         }
 
+        let shared = Arc::new(Shared { sender });
         Runtime { shared, threads }
     }
 
@@ -89,21 +83,21 @@ impl Runtime {
         let waker = crate::async_rt::waker::noop_waker();
         let mut cx = Context::from_waker(&waker);
 
-        // Drive the root future until it is ready, interleaving with spawned
-        // tasks so that the calling thread acts as an additional worker.
+        // Drive the root future until it is ready
         loop {
             match future.as_mut().poll(&mut cx) {
                 Poll::Ready(output) => return output,
                 Poll::Pending => {}
             }
 
-            if let Some(task) = self.shared.queue.try_pop() {
-                task.run();
-            } else {
-                // No work available. Park briefly so that a notification from
-                // a waker wakes us up, while still allowing progress if a
-                // notification is missed.
-                thread::park_timeout(Duration::from_millis(1));
+            #[cfg(not(loom))]
+            {
+                std::thread::park_timeout(std::time::Duration::from_millis(1));
+            }
+
+            #[cfg(loom)]
+            {
+                loom::thread::yield_now();
             }
         }
     }
@@ -114,17 +108,48 @@ impl Runtime {
     /// Any tasks still in the queue are abandoned; in-flight tasks run until
     /// they next return [`Poll::Pending`], at which point they will observe
     /// the shutdown flag and stop.
-    pub fn shutdown(self) {
-        drop(self);
+    #[allow(clippy::must_use_candidate)]
+    pub fn shutdown(mut self) -> bool {
+        self.shutdown_impl()
+    }
+
+    fn shutdown_impl(&mut self) -> bool {
+        self.shared.sender.shutdown();
+
+        let mut clean_shutdown = true;
+
+        #[cfg(loom)]
+        {
+            for t in self.threads.drain(..) {
+                let _ = t.join();
+            }
+        }
+
+        #[cfg(not(loom))]
+        {
+            use std::time::{Duration, Instant};
+            let deadline = Instant::now() + Duration::from_secs(10);
+            for t in self.threads.drain(..) {
+                while Instant::now() < deadline && !t.is_finished() {
+                    std::thread::park_timeout(Duration::from_millis(5));
+                }
+
+                if t.is_finished() {
+                    let _ = t.join();
+                } else {
+                    // stuck in a non-yielding future: detach
+                    clean_shutdown = false;
+                }
+            }
+        }
+
+        clean_shutdown
     }
 }
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        self.shared.queue.shutdown();
-        for t in self.threads.drain(..) {
-            let _ = t.join();
-        }
+        self.shutdown_impl();
     }
 }
 
@@ -169,14 +194,14 @@ impl Handle {
             unsafe { join_clone.set_output(result) };
         };
 
-        let task = Task::new(wrapped, self.shared.queue.clone(), Some(join_dyn));
+        let task = Task::new(wrapped, self.shared.sender.clone(), Some(join_dyn));
         task.schedule();
 
         JoinHandle { inner: join }
     }
 }
 
-#[cfg(all(test, not(loom), not(miri)))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::async_rt::task::yield_now;
@@ -264,7 +289,7 @@ mod tests {
 
             let expected: usize = (0..N).sum();
             assert_eq!(sum, expected);
-            rt.shutdown();
+            assert!(rt.shutdown());
         });
     }
 
@@ -304,24 +329,28 @@ mod tests {
     /// explicit call to [`Runtime::shutdown`].
     #[test]
     fn drop_without_shutdown() {
-        let worker = std::thread::spawn(|| {
-            let rt = Runtime::new(1);
-            let handle = rt.handle().spawn(async { 123 });
-            assert_eq!(rt.block_on(handle), 123);
-            // `rt` is dropped here; if workers did not exit, this thread would
-            // hang in `Drop`.
+        model(|| {
+            let worker = crate::thread::spawn(|| {
+                let rt = Runtime::new(1);
+                let handle = rt.handle().spawn(async { 123 });
+                assert_eq!(rt.block_on(handle), 123);
+                // `rt` is dropped here; if workers did not exit, this thread would
+                // hang in `Drop`.
+            });
+            worker.join().unwrap();
         });
-        worker.join().unwrap();
     }
 
     /// Mirrors the module-level doctest so that hangs are caught as unit tests.
     #[test]
     fn doctest_equivalent() {
-        let rt = Runtime::new(2);
-        let handle = rt.handle();
+        model(|| {
+            let rt = Runtime::new(2);
+            let handle = rt.handle();
 
-        let value = rt.block_on(async move { handle.spawn(async { 42 }).await });
+            let value = rt.block_on(async move { handle.spawn(async { 42 }).await });
 
-        assert_eq!(value, 42);
+            assert_eq!(value, 42);
+        });
     }
 }

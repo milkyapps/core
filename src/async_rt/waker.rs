@@ -1,9 +1,8 @@
 //! Waker implementation for async runtime tasks.
 
+use crate::async_rt::task::Task;
 use std::sync::Arc;
 use std::task::{RawWaker, RawWakerVTable, Waker};
-
-use crate::async_rt::task::Task;
 
 /// `RawWakerVTable` for task wakers.
 ///

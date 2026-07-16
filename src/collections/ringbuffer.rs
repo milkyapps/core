@@ -152,6 +152,11 @@ impl<T> RingBuffer<T> {
         self.len.load(Ordering::Relaxed)
     }
 
+    /// Return if the ringbuffer is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Pushes `item` to the tail of the buffer.
     ///
     /// This is non-blocking: if the buffer is full, the item is returned
@@ -213,6 +218,12 @@ impl<T> RingBuffer<T> {
     ///
     /// This is non-blocking: it returns `None` immediately when the buffer is
     /// empty rather than waiting for a producer.
+    ///
+    /// # Errors
+    ///
+    /// In high contention situations the thread trying to pop can fail
+    /// to gain access to the queue, in these case pop will fail, but
+    /// it can be tried agin because it may have item to be popped.
     pub fn pop(&self) -> Result<Option<T>, PopError> {
         for _ in 0..10 {
             let reader = self.reader.load(Ordering::Acquire);

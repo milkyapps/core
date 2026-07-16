@@ -7,10 +7,13 @@ ci RUN_LOOM="false":
     cargo bench
     cargo doc
 
-test module:
-    cargo t -- {{module}}
-    cargo +nightly miri test -- {{module}}
+test module args="":
+    cargo t -- {{module}} {{args}}
+    just test-miri {{module}}
     just test-loom {{module}}
+
+test-miri module:
+    cargo +nightly miri test -- {{module}}
 
 test-loom filter="" $LOOM_LOG="info" :
     RUSTFLAGS="--cfg loom" \

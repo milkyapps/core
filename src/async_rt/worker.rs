@@ -1,14 +1,12 @@
 //! Worker thread loop for the async runtime.
 
+use crate::{async_rt::task::Task, sync::channel::Receiver};
 use std::sync::Arc;
-use std::thread;
-
-use crate::async_rt::queue::Queue;
 
 /// Spawns a worker thread that pulls tasks from the queue until shutdown.
-pub(crate) fn spawn(queue: Arc<Queue>) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-        while let Some(task) = queue.pop() {
+pub(crate) fn spawn(rx: Receiver<Arc<Task>>) -> crate::thread::JoinHandle<()> {
+    crate::thread::spawn(move || {
+        while let Some(task) = rx.recv() {
             task.run();
         }
     })

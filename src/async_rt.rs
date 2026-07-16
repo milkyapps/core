@@ -24,7 +24,6 @@
 //! ```
 
 pub mod join_handle;
-pub mod queue;
 pub mod runtime;
 pub mod task;
 pub mod waker;

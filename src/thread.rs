@@ -8,8 +8,13 @@ pub(crate) use std::thread::scope;
 #[allow(unused_imports)]
 pub use std::thread::yield_now;
 
+#[cfg(not(loom))]
+#[allow(unused_imports)]
+pub use std::thread::{JoinHandle, spawn};
+
 #[cfg(loom)]
 mod inner {
+    pub use loom::thread::{JoinHandle, spawn};
     use std::cell::RefCell;
     use std::marker::PhantomData;
     pub use std::thread::yield_now;

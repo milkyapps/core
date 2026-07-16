@@ -1,16 +1,16 @@
 //! Task representation and scheduling for the async runtime.
 
+use crate::sync::atomic::{AtomicBool, Ordering};
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 
 use crate::async_rt::join_handle::Joinable;
-use crate::async_rt::queue::Queue;
 use crate::async_rt::waker::waker_from_task;
+use crate::sync::channel::Sender;
 
 /// A runnable unit of work.
 ///
@@ -20,7 +20,7 @@ pub(crate) struct Task {
     scheduled: AtomicBool,
     running: AtomicBool,
     completed: AtomicBool,
-    queue: Arc<Queue>,
+    sender: Sender<Arc<Task>>,
     future: UnsafeCell<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>,
     pub(crate) join: Option<Arc<dyn Joinable + Send + Sync>>,
 }
@@ -48,7 +48,7 @@ impl Task {
     #[must_use]
     pub(crate) fn new<F>(
         future: F,
-        queue: Arc<Queue>,
+        sender: Sender<Arc<Task>>,
         join: Option<Arc<dyn Joinable + Send + Sync>>,
     ) -> Arc<Task>
     where
@@ -58,7 +58,7 @@ impl Task {
             scheduled: AtomicBool::new(false),
             running: AtomicBool::new(false),
             completed: AtomicBool::new(false),
-            queue,
+            sender,
             future: UnsafeCell::new(Some(Box::pin(future))),
             join,
         })
@@ -83,7 +83,8 @@ impl Task {
         if self.scheduled.swap(true, Ordering::AcqRel) {
             return;
         }
-        self.queue.push(self.clone());
+
+        self.sender.send(self.clone()).unwrap();
     }
 
     /// Polls the task's future once.
@@ -142,7 +143,7 @@ impl Task {
                 // If the future was woken while it was polling, schedule a
                 // new turn.
                 if was_scheduled {
-                    self.queue.push(self.clone());
+                    self.sender.send(self.clone()).unwrap();
                 }
             }
         }

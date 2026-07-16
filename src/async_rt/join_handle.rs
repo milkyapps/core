@@ -1,12 +1,12 @@
 //! Join handle for tasks spawned on the async runtime.
 
+use crate::sync::atomic::{AtomicBool, Ordering};
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::future::Future;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, Waker};
 
 /// Trait object interface used by [`Task`] to wake a task awaiting a result.
