@@ -18,6 +18,18 @@ pub struct AtomicWaker {
     waker: UnsafeCell<Option<Waker>>,
 }
 
+unsafe impl Sync for AtomicWaker {}
+unsafe impl Send for AtomicWaker {}
+
+impl std::fmt::Debug for AtomicWaker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AtomicWaker")
+            .field("state", &self.state)
+            .field("waker", &self.waker)
+            .finish()
+    }
+}
+
 impl Default for AtomicWaker {
     fn default() -> Self {
         Self {

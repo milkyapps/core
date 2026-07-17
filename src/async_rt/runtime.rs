@@ -4,10 +4,12 @@ use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
-use crate::async_rt::join_handle::{JoinCell, JoinHandle};
+use crate::async_rt::atomic_waker::AtomicWaker;
+use crate::async_rt::join_handle::JoinHandle;
 use crate::async_rt::task::Task;
 use crate::async_rt::worker;
 use crate::sync::bounded::{Receiver, Sender, bounded};
+use crate::sync::oneshot::oneshot;
 
 /// Shared state between a [`Runtime`] and its [`Handle`]s.
 struct Shared {
@@ -187,19 +189,19 @@ impl Handle {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        let join = Arc::new(JoinCell::<F::Output>::new());
+        let (sender, receiver) = oneshot();
+        let waker = Arc::new(AtomicWaker::default());
 
         let future = {
-            let join = join.clone();
             async move {
                 let result = future.await;
-                join.store(result);
+                sender.send(result);
             }
         };
-        let task = Task::new(future, self.shared.sender.clone(), Some(join.clone()));
+        let task = Task::new(future, self.shared.sender.clone(), waker.clone());
         task.schedule();
 
-        JoinHandle { inner: join }
+        JoinHandle { receiver, waker }
     }
 }
 

@@ -1,16 +1,15 @@
 //! Task representation and scheduling for the async runtime.
 
+use crate::async_rt::atomic_waker::AtomicWaker;
+use crate::async_rt::waker::waker_from_task;
 use crate::sync::atomic::{AtomicBool, Ordering};
+use crate::sync::bounded::Sender;
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-
-use crate::async_rt::join_handle::Joinable;
-use crate::async_rt::waker::waker_from_task;
-use crate::sync::bounded::Sender;
 
 /// A runnable unit of work.
 ///
@@ -22,7 +21,7 @@ pub(crate) struct Task {
     completed: AtomicBool,
     sender: Sender<Arc<Task>>,
     future: UnsafeCell<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>,
-    pub(crate) join: Option<Arc<dyn Joinable + Send + Sync>>,
+    pub(crate) waker: Arc<AtomicWaker>,
 }
 
 impl fmt::Debug for Task {
@@ -31,7 +30,7 @@ impl fmt::Debug for Task {
             .field("scheduled", &self.scheduled.load(Ordering::Relaxed))
             .field("running", &self.running.load(Ordering::Relaxed))
             .field("completed", &self.completed.load(Ordering::Relaxed))
-            .field("has_join", &self.join.is_some())
+            .field("waker", &self.waker)
             .finish_non_exhaustive()
     }
 }
@@ -46,11 +45,7 @@ unsafe impl Sync for Task {}
 impl Task {
     /// Creates a new task that will run the given future to completion.
     #[must_use]
-    pub(crate) fn new<F>(
-        future: F,
-        sender: Sender<Arc<Task>>,
-        join: Option<Arc<dyn Joinable + Send + Sync>>,
-    ) -> Arc<Task>
+    pub(crate) fn new<F>(future: F, sender: Sender<Arc<Task>>, waker: Arc<AtomicWaker>) -> Arc<Task>
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -60,7 +55,7 @@ impl Task {
             completed: AtomicBool::new(false),
             sender,
             future: UnsafeCell::new(Some(Box::pin(future))),
-            join,
+            waker,
         })
     }
 
@@ -133,8 +128,8 @@ impl Task {
 
                 // Wake any task waiting on this task's result. Root tasks have
                 // no join handle, so there is nothing to wake in that case.
-                if let Some(join) = &self.join {
-                    join.wake_waiter();
+                if let Some(waker) = self.waker.take() {
+                    waker.wake();
                 }
             }
             Poll::Pending => {
