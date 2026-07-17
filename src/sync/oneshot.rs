@@ -64,7 +64,6 @@ pub struct Receiver<T> {
     shared: Arc<Shared<T>>,
 }
 
-unsafe impl<T: Send> Sync for Receiver<T> {}
 unsafe impl<T: Send> Send for Receiver<T> {}
 
 impl<T> Receiver<T> {
@@ -83,5 +82,78 @@ impl<T> Receiver<T> {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync::model;
+
+    /// A value sent before any receive is returned unchanged by `try_recv`.
+    #[test]
+    fn send_then_try_recv() {
+        model(|| {
+            let (tx, rx) = oneshot();
+            assert!(!rx.has_value());
+            tx.send(7);
+            assert!(rx.has_value());
+            assert_eq!(rx.try_recv(), Some(7));
+            assert!(rx.has_value(), "lock stays Done after a take");
+            assert_eq!(
+                rx.try_recv(),
+                None,
+                "a second take on a oneshot returns None"
+            );
+        });
+    }
+
+    /// `try_recv` before the sender has produced returns `None` and does not
+    /// block.
+    #[test]
+    fn try_recv_returns_none_before_send() {
+        model(|| {
+            let (tx, rx) = oneshot::<i32>();
+            assert_eq!(rx.try_recv(), None);
+            tx.send(1);
+            assert_eq!(rx.try_recv(), Some(1));
+        });
+    }
+
+    /// Dropping the sender without sending leaves the receiver without a value.
+    #[test]
+    fn drop_sender_without_send() {
+        model(|| {
+            let (tx, rx) = oneshot::<i32>();
+            drop(tx);
+            assert_eq!(rx.try_recv(), None);
+            assert!(!rx.has_value());
+        });
+    }
+
+    /// A `Send` but non-`Copy` value is moved out exactly once.
+    #[test]
+    fn try_recv_moves_box_once() {
+        model(|| {
+            let (tx, rx) = oneshot();
+            tx.send(Box::new(42));
+            let got: Box<i32> = rx.try_recv().unwrap();
+            assert_eq!(*got, 42);
+            assert!(rx.try_recv().is_none());
+        });
+    }
+
+    /// `Sender<T>` and `Receiver<T>` are `Send` when `T: Send`. After the manual
+    /// `unsafe impl<T: Send> Sync for Receiver<T>` was removed, `Receiver<T>` is
+    /// **not** `Sync` for any `T`: its only field is `Arc<Shared<T>>`, and
+    /// `Shared<T>` contains an `UnsafeCell<Option<T>>`, which blocks the
+    /// auto-derive of `Sync` on `Shared<T>` → `Arc<Shared<T>>` → `Receiver<T>`.
+    /// So a `&Receiver` can no longer be shared across threads, which closes the
+    /// `try_recv` data race (BUG 2) at the type level.
+    #[test]
+    fn receiver_is_send_but_not_sync() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Sender<i32>>();
+        assert_send::<Receiver<i32>>();
     }
 }

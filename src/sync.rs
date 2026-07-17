@@ -7,6 +7,9 @@ pub mod bounded;
 /// oneshot module
 pub mod oneshot;
 
+/// `AtomicOption` module
+pub mod atomic_option;
+
 // `UnsafeCell` is always re-exported from `std`: loom's `UnsafeCell` exposes a
 // different API (its `get` returns `ConstPtr`/`MutPtr` rather than `*mut T`) and
 // the hazard pointers code relies on `*mut T` from `get`. The concurrent

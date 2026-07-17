@@ -1,15 +1,14 @@
 //! Runtime and handle for the async runtime.
 
-use std::fmt;
-use std::future::Future;
-use std::sync::Arc;
-
-use crate::async_rt::atomic_waker::AtomicWaker;
 use crate::async_rt::join_handle::JoinHandle;
 use crate::async_rt::task::Task;
 use crate::async_rt::worker;
+use crate::sync::atomic_option::AtomicOption;
 use crate::sync::bounded::{Receiver, Sender, bounded};
 use crate::sync::oneshot::oneshot;
+use std::fmt;
+use std::future::Future;
+use std::sync::Arc;
 
 /// Shared state between a [`Runtime`] and its [`Handle`]s.
 struct Shared {
@@ -190,7 +189,7 @@ impl Handle {
         F::Output: Send + 'static,
     {
         let (sender, receiver) = oneshot();
-        let waker = Arc::new(AtomicWaker::default());
+        let waker = Arc::new(AtomicOption::default());
 
         let future = {
             async move {
@@ -355,6 +354,90 @@ mod tests {
             let value = rt.block_on(async move { handle.spawn(async { 42 }).await });
 
             assert_eq!(value, 42);
+        });
+    }
+
+    /// Dropping a `JoinHandle` without awaiting does not cancel the task: the
+    /// task still runs to completion and its side effect is observable.
+    #[test]
+    fn dropped_join_handle_does_not_cancel_task() {
+        model(|| {
+            let rt = Runtime::new(2);
+            let handle = rt.handle();
+            let flag = Arc::new(AtomicUsize::new(0));
+
+            let flag_clone = Arc::clone(&flag);
+            let _join = handle.spawn(async move {
+                flag_clone.store(1, Ordering::SeqCst);
+            });
+            // Drop the handle immediately; the task must still execute.
+
+            rt.block_on({
+                let flag = Arc::clone(&flag);
+                async move {
+                    // Poll an unrelated future until the spawned task has run.
+                    let mut waited = 0;
+                    while flag.load(Ordering::SeqCst) == 0 && waited < 100 {
+                        yield_now().await;
+                        waited += 1;
+                    }
+                    flag.load(Ordering::SeqCst)
+                }
+            });
+
+            assert_eq!(
+                flag.load(Ordering::SeqCst),
+                1,
+                "task was cancelled when its handle was dropped"
+            );
+            rt.shutdown();
+        });
+    }
+
+    /// A task that awaits another task's `JoinHandle` propagates the inner
+    /// result through `block_on`. Exercises the join path end-to-end with a
+    /// non-trivial value.
+    #[test]
+    fn join_handle_propagates_result() {
+        model(|| {
+            let rt = Runtime::new(2);
+            let handle = rt.handle();
+
+            let value = rt.block_on(async move {
+                let a = handle.spawn(async { 10 });
+                let b = handle.spawn(async { 32 });
+                a.await + b.await
+            });
+
+            assert_eq!(value, 42);
+            rt.shutdown();
+        });
+    }
+
+    /// A handle cloned to another OS thread can spawn tasks that the runtime
+    /// drives, and `block_on` on the original thread collects their results.
+    #[cfg(not(loom))] // uses std::sync::mpsc, which is not loom-modelable
+    #[test]
+    fn handle_is_cloneable_and_send() {
+        model(|| {
+            let rt = Runtime::new(2);
+            let handle = rt.handle();
+            let handle_clone = handle.clone();
+
+            // Spawn a task *from another OS thread*, handing the JoinHandle back
+            // to the main thread, which awaits it inside `block_on`.
+            let (tx, rx) = std::sync::mpsc::channel();
+            crate::thread::scope(|s| {
+                s.spawn(move || {
+                    let join = handle_clone.spawn(async { 21 });
+                    tx.send(join).unwrap();
+                });
+            });
+
+            let join = rx.recv().unwrap();
+            let value = rt.block_on(join);
+            assert_eq!(value, 21);
+            rt.shutdown();
         });
     }
 }

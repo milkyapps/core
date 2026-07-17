@@ -266,9 +266,6 @@ impl<T> Receiver<T> {
                     // check channel is closed or not
                     if self.shared.is_closed() {
                         self.shared.waiting_cv.notify_all();
-                    }
-                    if self.shared.is_closed() {
-                        self.shared.waiting_cv.notify_all();
                         return None;
                     }
                     return None;

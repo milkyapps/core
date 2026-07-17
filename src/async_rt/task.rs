@@ -1,15 +1,15 @@
 //! Task representation and scheduling for the async runtime.
 
-use crate::async_rt::atomic_waker::AtomicWaker;
 use crate::async_rt::waker::waker_from_task;
 use crate::sync::atomic::{AtomicBool, Ordering};
+use crate::sync::atomic_option::AtomicOption;
 use crate::sync::bounded::Sender;
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 
 /// A runnable unit of work.
 ///
@@ -21,7 +21,7 @@ pub(crate) struct Task {
     completed: AtomicBool,
     sender: Sender<Arc<Task>>,
     future: UnsafeCell<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>,
-    pub(crate) waker: Arc<AtomicWaker>,
+    pub(crate) waker: Arc<AtomicOption<Waker>>,
 }
 
 impl fmt::Debug for Task {
@@ -45,7 +45,11 @@ unsafe impl Sync for Task {}
 impl Task {
     /// Creates a new task that will run the given future to completion.
     #[must_use]
-    pub(crate) fn new<F>(future: F, sender: Sender<Arc<Task>>, waker: Arc<AtomicWaker>) -> Arc<Task>
+    pub(crate) fn new<F>(
+        future: F,
+        sender: Sender<Arc<Task>>,
+        waker: Arc<AtomicOption<Waker>>,
+    ) -> Arc<Task>
     where
         F: Future<Output = ()> + Send + 'static,
     {
