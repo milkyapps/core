@@ -22,14 +22,14 @@ pub use std::cell::UnsafeCell;
 #[allow(unused_imports)]
 pub(crate) use std::sync::{
     Arc, Barrier,
-    atomic::{self, AtomicBool, AtomicPtr, AtomicUsize, Ordering},
+    atomic::{self, AtomicBool, AtomicPtr, AtomicU8, AtomicUsize, Ordering},
 };
 
 #[cfg(loom)]
 #[allow(unused_imports)]
 pub use loom::sync::{
     Arc,
-    atomic::{self, AtomicBool, AtomicPtr, AtomicUsize, Ordering},
+    atomic::{self, AtomicBool, AtomicPtr, AtomicU8, AtomicUsize, Ordering},
 };
 
 // `loom::sync::Barrier` is currently only a stub that panics, so under the
