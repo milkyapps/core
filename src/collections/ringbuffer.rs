@@ -1,6 +1,6 @@
 //! A bounded, lock-free multi-producer multi-consumer (MPMC) ring buffer.
 //!
-//! [`RingBuffer`] is a fixed-capacity queue that any number of producers and
+//! `RingBuffer` is a fixed-capacity queue that any number of producers and
 //! consumers can share across threads. Enqueue and dequeue never block on a
 //! mutex: contention between threads is resolved without locks.
 //!
@@ -8,17 +8,9 @@
 //!
 //! Each slot is written once and read once per lap of the ring, so every item
 //! pushed is popped exactly once — no loss and no duplication. Items are
-//! consumed in slot order: [`pop`](RingBuffer::pop) returns
+//! consumed in slot order: `pop` returns
 //! [`None`](Option::None) while the slot at the head of the queue has not been
 //! committed yet, rather than skipping ahead to a later slot.
-//!
-//! # Blocking vs. non-blocking
-//!
-//! [`push`](RingBuffer::push) and [`pop`](RingBuffer::pop) are non-blocking:
-//! `push` hands the item back if the buffer is full, and `pop` returns `None`
-//! if the buffer is empty. [`push_with_timeout`](RingBuffer::push_with_timeout)
-//! retries `push` with a backoff until it succeeds or a deadline elapses, for
-//! callers that want to block.
 //!
 //! # Capacity
 //!

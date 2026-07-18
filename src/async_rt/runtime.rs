@@ -111,7 +111,7 @@ impl Runtime {
     /// the runtime.
     ///
     /// Any tasks still in the queue are abandoned; in-flight tasks run until
-    /// they next return [`Poll::Pending`], at which point they will observe
+    /// they next return `Poll::Pending`, at which point they will observe
     /// the shutdown flag and stop.
     #[allow(clippy::must_use_candidate)]
     pub fn shutdown(mut self) -> bool {

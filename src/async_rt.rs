@@ -2,9 +2,9 @@
 //!
 //! # Overview
 //!
-//! [`Runtime`] owns a set of worker threads and a shared task queue. Futures
-//! can be driven to completion with [`Runtime::block_on`] or spawned onto the
-//! pool with [`Handle::spawn`]. The runtime implements the standard [`Future`]
+//! `Runtime` owns a set of worker threads and a shared task queue. Futures
+//! can be driven to completion with `Runtime::block_on` or spawned onto the
+//! pool with `Handle::spawn`. The runtime implements the standard [`Future`]
 //! contract using a custom [`std::task::Waker`] that reschedules tasks onto the
 //! queue.
 //!

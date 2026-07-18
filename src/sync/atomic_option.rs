@@ -1,69 +1,50 @@
-use crate::sync::atomic::AtomicUsize;
-use std::{cell::UnsafeCell, hint::spin_loop, sync::atomic::Ordering};
+#[cfg(not(loom))]
+use crate::sync::spinlock::Spinlock;
+use std::cell::UnsafeCell;
 
-/// Option protected by a spin lock.
+/// A single-slot cell holding `Option<T>` under exclusive access.
 pub struct AtomicOption<T> {
-    lock: AtomicUsize,
+    lock: Spinlock,
     data: UnsafeCell<Option<T>>,
 }
 
 impl<T: std::fmt::Debug> std::fmt::Debug for AtomicOption<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AtomicOption")
-            .field("lock", &self.lock)
-            .field("data", &self.data)
-            .finish()
+        f.debug_struct("AtomicOption").finish_non_exhaustive()
     }
 }
 
 impl<T> Default for AtomicOption<T> {
     fn default() -> Self {
         Self {
-            lock: AtomicUsize::new(0),
+            lock: Spinlock::default(),
             data: UnsafeCell::new(None),
         }
     }
 }
 
+// SAFETY: both backing implementations provide exclusive access to the inner
+// `Option<T>`; transferring access transfers ownership of `T`. `T: Send` is
+// sufficient (the value is never shared as a borrow across threads).
 unsafe impl<T: Send> Sync for AtomicOption<T> {}
 unsafe impl<T: Send> Send for AtomicOption<T> {}
 
 impl<T> AtomicOption<T> {
-    fn lock(&self) {
-        while self
-            .lock
-            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            spin_loop();
-        }
-    }
-
-    fn unlock(&self) {
-        unsafe {
-            self.lock
-                .compare_exchange(1, 0, Ordering::AcqRel, Ordering::Acquire)
-                .unwrap_unchecked();
-        }
-    }
-
-    /// Replace the current value with item, and return the old value.
-    /// This fucntion will spin until it get unique write access.
+    /// Replace the current value with `item` and return the previous value.
+    ///
+    /// Spins until it acquires exclusive write access (std) or blocks on the
+    /// modeled `Mutex` (Loom).
     pub fn replace(&self, item: T) -> Option<T> {
-        self.lock();
-        let old = unsafe { (*self.data.get()).replace(item) };
-        self.unlock();
-
-        old
+        let _g = self.lock.lock();
+        // SAFETY: we hold the lock, so no other thread accesses `data`.
+        unsafe { (*self.data.get()).replace(item) }
     }
 
-    /// Return the current value and put `None` in place.
+    /// Return the current value and leave `None` in its place.
     pub fn take(&self) -> Option<T> {
-        self.lock();
-        let old = unsafe { (*self.data.get()).take() };
-        self.unlock();
-
-        old
+        let _g = self.lock.lock();
+        // SAFETY: we hold the lock, so no other thread accesses `data`.
+        unsafe { (*self.data.get()).take() }
     }
 }
 
@@ -103,15 +84,14 @@ mod tests {
         });
     }
 
-    /// Regression test for the `AtomicWaker` data race (BUG 1 in BUGS.txt).
+    /// Regression test for the `AtomicWaker` data race (BUG 1).
     ///
     /// The previous lock-free `AtomicWaker::take` performed a non-atomic
     /// `Option::take` on the `UnsafeCell` with no exclusion, so two concurrent
-    /// `take`s (or a `take` racing a `register`) were a data race. `AtomicOption`
-    /// guards every cell access with a CAS spin lock, so two concurrent `take`s
-    /// must now be mutually exclusive. This test fails under Miri (data race on
-    /// `*self.data.get()`) if the locking is removed or bypassed, and passes
-    /// under Miri with the lock in place.
+    /// `take`s were a data race. `AtomicOption` provides exclusive access to
+    /// the inner `Option<T>` (spin lock in prod, `Mutex` under Loom), so two
+    /// concurrent `take`s must be mutually exclusive: one gets the value, the
+    /// other `None`. Fails under Miri if the exclusion is broken.
     #[test]
     fn take_and_take_do_not_race() {
         model(|| {
@@ -130,13 +110,13 @@ mod tests {
         });
     }
 
-    /// Regression test for the `AtomicWaker` data race (BUG 1 in BUGS.txt).
+    /// Regression test for the `AtomicWaker` data race (BUG 1).
     ///
     /// A concurrent `replace` (writer) and `take` (reader/writer) must be
     /// mutually exclusive. Under the old `AtomicWaker` this was a data race
     /// because `take` did not participate in the writer side's state machine.
-    /// Under `AtomicOption` both go through the spin lock, so this must pass
-    /// under Miri.
+    /// Under `AtomicOption` both go through the exclusive-access path, so this
+    /// must pass under Miri.
     #[test]
     fn replace_and_take_do_not_race() {
         model(|| {
