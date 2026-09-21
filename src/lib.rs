@@ -20,3 +20,5 @@ pub(crate) mod thread;
 
 /// Reusable collection data structures.
 pub mod collections;
+
+pub mod pagemgr;

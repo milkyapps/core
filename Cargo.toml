@@ -5,14 +5,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# Used by `src/allocators/multipool.rs`'s `multipool!` macro to paste
-# identifiers.
 paste = "1"
+memmap2 = "0.9.11"
 
 [dev-dependencies]
 micromeasure = "0.6"
-# Used only when running the tests under `--cfg loom` (see the `test-loom`
-# justfile recipe).
 loom = "0.7"
 
 [lints.rust]
