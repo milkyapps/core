@@ -1,0 +1,183 @@
+---
+source: tests/arttrie_runner.rs
+expression: transcript
+---
+> Start
+
+trie:
+  (empty)
+
+root: None
+
+> insert_bytes from=0 to=16 value="v"
+
+trie:
+  Node48 [p5s0] count=17 prefix=""
+    '·'/0x00 ->
+      Leaf [p2s0] key="\0" value="v"
+    '·'/0x01 ->
+      Leaf [p2s1] key="\u{1}" value="v"
+    '·'/0x02 ->
+      Leaf [p2s2] key="\u{2}" value="v"
+    '·'/0x03 ->
+      Leaf [p2s3] key="\u{3}" value="v"
+    '·'/0x04 ->
+      Leaf [p2s4] key="\u{4}" value="v"
+    '·'/0x05 ->
+      Leaf [p2s5] key="\u{5}" value="v"
+    '·'/0x06 ->
+      Leaf [p2s6] key="\u{6}" value="v"
+    '·'/0x07 ->
+      Leaf [p2s7] key="\u{7}" value="v"
+    '·'/0x08 ->
+      Leaf [p2s8] key="\u{8}" value="v"
+    '·'/0x09 ->
+      Leaf [p2s9] key="\t" value="v"
+    '·'/0x0a ->
+      Leaf [p2s10] key="\n" value="v"
+    '·'/0x0b ->
+      Leaf [p2s11] key="\u{b}" value="v"
+    '·'/0x0c ->
+      Leaf [p2s12] key="\u{c}" value="v"
+    '·'/0x0d ->
+      Leaf [p2s13] key="\r" value="v"
+    '·'/0x0e ->
+      Leaf [p2s14] key="\u{e}" value="v"
+    '·'/0x0f ->
+      Leaf [p2s15] key="\u{f}" value="v"
+    '·'/0x10 ->
+      Leaf [p2s16] key="\u{10}" value="v"
+
+root: page=5 slot=0 size=2048
+
+> get key="\0"
+
+result: Some("v")
+stats: nodes=2 inner=1 edges=1 prefix_bytes=0 leaf_compared=true
+
+trie:
+  Node48 [p5s0] count=17 prefix=""
+    '·'/0x00 ->
+      Leaf [p2s0] key="\0" value="v"
+    '·'/0x01 ->
+      Leaf [p2s1] key="\u{1}" value="v"
+    '·'/0x02 ->
+      Leaf [p2s2] key="\u{2}" value="v"
+    '·'/0x03 ->
+      Leaf [p2s3] key="\u{3}" value="v"
+    '·'/0x04 ->
+      Leaf [p2s4] key="\u{4}" value="v"
+    '·'/0x05 ->
+      Leaf [p2s5] key="\u{5}" value="v"
+    '·'/0x06 ->
+      Leaf [p2s6] key="\u{6}" value="v"
+    '·'/0x07 ->
+      Leaf [p2s7] key="\u{7}" value="v"
+    '·'/0x08 ->
+      Leaf [p2s8] key="\u{8}" value="v"
+    '·'/0x09 ->
+      Leaf [p2s9] key="\t" value="v"
+    '·'/0x0a ->
+      Leaf [p2s10] key="\n" value="v"
+    '·'/0x0b ->
+      Leaf [p2s11] key="\u{b}" value="v"
+    '·'/0x0c ->
+      Leaf [p2s12] key="\u{c}" value="v"
+    '·'/0x0d ->
+      Leaf [p2s13] key="\r" value="v"
+    '·'/0x0e ->
+      Leaf [p2s14] key="\u{e}" value="v"
+    '·'/0x0f ->
+      Leaf [p2s15] key="\u{f}" value="v"
+    '·'/0x10 ->
+      Leaf [p2s16] key="\u{10}" value="v"
+
+root: page=5 slot=0 size=2048
+
+> get key="\u{10}"
+
+result: Some("v")
+stats: nodes=2 inner=1 edges=1 prefix_bytes=0 leaf_compared=true
+
+trie:
+  Node48 [p5s0] count=17 prefix=""
+    '·'/0x00 ->
+      Leaf [p2s0] key="\0" value="v"
+    '·'/0x01 ->
+      Leaf [p2s1] key="\u{1}" value="v"
+    '·'/0x02 ->
+      Leaf [p2s2] key="\u{2}" value="v"
+    '·'/0x03 ->
+      Leaf [p2s3] key="\u{3}" value="v"
+    '·'/0x04 ->
+      Leaf [p2s4] key="\u{4}" value="v"
+    '·'/0x05 ->
+      Leaf [p2s5] key="\u{5}" value="v"
+    '·'/0x06 ->
+      Leaf [p2s6] key="\u{6}" value="v"
+    '·'/0x07 ->
+      Leaf [p2s7] key="\u{7}" value="v"
+    '·'/0x08 ->
+      Leaf [p2s8] key="\u{8}" value="v"
+    '·'/0x09 ->
+      Leaf [p2s9] key="\t" value="v"
+    '·'/0x0a ->
+      Leaf [p2s10] key="\n" value="v"
+    '·'/0x0b ->
+      Leaf [p2s11] key="\u{b}" value="v"
+    '·'/0x0c ->
+      Leaf [p2s12] key="\u{c}" value="v"
+    '·'/0x0d ->
+      Leaf [p2s13] key="\r" value="v"
+    '·'/0x0e ->
+      Leaf [p2s14] key="\u{e}" value="v"
+    '·'/0x0f ->
+      Leaf [p2s15] key="\u{f}" value="v"
+    '·'/0x10 ->
+      Leaf [p2s16] key="\u{10}" value="v"
+
+root: page=5 slot=0 size=2048
+
+> get key="\u{11}"
+
+result: None
+stats: nodes=1 inner=1 edges=0 prefix_bytes=0 leaf_compared=false
+
+trie:
+  Node48 [p5s0] count=17 prefix=""
+    '·'/0x00 ->
+      Leaf [p2s0] key="\0" value="v"
+    '·'/0x01 ->
+      Leaf [p2s1] key="\u{1}" value="v"
+    '·'/0x02 ->
+      Leaf [p2s2] key="\u{2}" value="v"
+    '·'/0x03 ->
+      Leaf [p2s3] key="\u{3}" value="v"
+    '·'/0x04 ->
+      Leaf [p2s4] key="\u{4}" value="v"
+    '·'/0x05 ->
+      Leaf [p2s5] key="\u{5}" value="v"
+    '·'/0x06 ->
+      Leaf [p2s6] key="\u{6}" value="v"
+    '·'/0x07 ->
+      Leaf [p2s7] key="\u{7}" value="v"
+    '·'/0x08 ->
+      Leaf [p2s8] key="\u{8}" value="v"
+    '·'/0x09 ->
+      Leaf [p2s9] key="\t" value="v"
+    '·'/0x0a ->
+      Leaf [p2s10] key="\n" value="v"
+    '·'/0x0b ->
+      Leaf [p2s11] key="\u{b}" value="v"
+    '·'/0x0c ->
+      Leaf [p2s12] key="\u{c}" value="v"
+    '·'/0x0d ->
+      Leaf [p2s13] key="\r" value="v"
+    '·'/0x0e ->
+      Leaf [p2s14] key="\u{e}" value="v"
+    '·'/0x0f ->
+      Leaf [p2s15] key="\u{f}" value="v"
+    '·'/0x10 ->
+      Leaf [p2s16] key="\u{10}" value="v"
+
+root: page=5 slot=0 size=2048

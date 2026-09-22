@@ -1,0 +1,34 @@
+# WHAT: Keys with distinct first bytes build a root Node4 (empty prefix).
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "apple"
+value = "1"
+
+[[cmds]]
+op = "insert"
+key = "banana"
+value = "2"
+
+[[cmds]]
+op = "insert"
+key = "cherry"
+value = "3"
+
+[[cmds]]
+op = "get"
+key = "apple"
+
+[[cmds]]
+op = "get"
+key = "banana"
+
+[[cmds]]
+op = "get"
+key = "cherry"
+
+[[cmds]]
+op = "get"
+key = "date"

@@ -1,0 +1,22 @@
+# WHAT: 49 single-byte keys grow Node48 → Node256. Pages omitted (8KiB slots).
+page_size = 65536
+dirties_before_flush = 16
+include_pages = false
+
+[[cmds]]
+op = "insert_bytes"
+from = 0
+to = 48
+value = "v"
+
+[[cmds]]
+op = "get"
+key = "\u0000"
+
+[[cmds]]
+op = "get"
+key = "0"
+
+[[cmds]]
+op = "get"
+key = "1"

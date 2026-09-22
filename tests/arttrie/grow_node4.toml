@@ -1,0 +1,40 @@
+# WHAT: Five distinct single-byte keys fill Node4 then grow to Node16.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "a"
+value = "va"
+
+[[cmds]]
+op = "insert"
+key = "b"
+value = "vb"
+
+[[cmds]]
+op = "insert"
+key = "c"
+value = "vc"
+
+[[cmds]]
+op = "insert"
+key = "d"
+value = "vd"
+
+[[cmds]]
+op = "insert"
+key = "e"
+value = "ve"
+
+[[cmds]]
+op = "get"
+key = "a"
+
+[[cmds]]
+op = "get"
+key = "e"
+
+[[cmds]]
+op = "get"
+key = "z"

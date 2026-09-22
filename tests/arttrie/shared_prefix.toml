@@ -1,0 +1,30 @@
+# WHAT: Shared-prefix keys force an inner Node4 ("hel") with three leaf children.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "hello"
+value = "world"
+
+[[cmds]]
+op = "insert"
+key = "help"
+value = "desk"
+
+[[cmds]]
+op = "insert"
+key = "helium"
+value = "gas"
+
+[[cmds]]
+op = "get"
+key = "hello"
+
+[[cmds]]
+op = "get"
+key = "help"
+
+[[cmds]]
+op = "get"
+key = "helium"

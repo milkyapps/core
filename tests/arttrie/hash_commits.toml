@@ -1,0 +1,227 @@
+# WHAT: Many git-like 40-char hex hashes. Families share long prefixes so the
+# dump shows how Node* headers compress path bytes (MAX_PREFIX=8) and fan out
+# on the distinguishing nibble/byte. Pages omitted — structure only.
+page_size = 65536
+dirties_before_flush = 16
+include_pages = false
+
+# ── family "aaaaaaaa" (38 shared hex chars before diverge) ───────────────
+[[cmds]]
+op = "insert"
+key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+value = "commit:root"
+
+[[cmds]]
+op = "insert"
+key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+value = "commit:aab"
+
+[[cmds]]
+op = "insert"
+key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac"
+value = "commit:aac"
+
+[[cmds]]
+op = "insert"
+key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad"
+value = "commit:aad"
+
+# ── family "deadbeef" then diverge after 8 / 16 / 24 hex chars ───────────
+[[cmds]]
+op = "insert"
+key = "deadbeef00000000000000000000000000000001"
+value = "tree:db00-1"
+
+[[cmds]]
+op = "insert"
+key = "deadbeef00000000000000000000000000000002"
+value = "tree:db00-2"
+
+[[cmds]]
+op = "insert"
+key = "deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa"
+value = "tree:db00-aa"
+
+[[cmds]]
+op = "insert"
+key = "deadbeef11111111111111111111111111111111"
+value = "tree:db11"
+
+[[cmds]]
+op = "insert"
+key = "deadbeefcafe0000000000000000000000000001"
+value = "blob:cafe-1"
+
+[[cmds]]
+op = "insert"
+key = "deadbeefcafe0000000000000000000000000002"
+value = "blob:cafe-2"
+
+[[cmds]]
+op = "insert"
+key = "deadbeefcafefeed000000000000000000000001"
+value = "blob:feed-1"
+
+[[cmds]]
+op = "insert"
+key = "deadbeefcafefeed000000000000000000000002"
+value = "blob:feed-2"
+
+# ── family "c0ffee" (common short prefix, wide fan-out) ───────────────────
+[[cmds]]
+op = "insert"
+key = "c0ffee0000000000000000000000000000000001"
+value = "obj:1"
+
+[[cmds]]
+op = "insert"
+key = "c0ffee0000000000000000000000000000000002"
+value = "obj:2"
+
+[[cmds]]
+op = "insert"
+key = "c0ffee1000000000000000000000000000000001"
+value = "obj:10"
+
+[[cmds]]
+op = "insert"
+key = "c0ffee2000000000000000000000000000000001"
+value = "obj:20"
+
+[[cmds]]
+op = "insert"
+key = "c0ffee3000000000000000000000000000000001"
+value = "obj:30"
+
+[[cmds]]
+op = "insert"
+key = "c0ffee4000000000000000000000000000000001"
+value = "obj:40"
+
+[[cmds]]
+op = "insert"
+key = "c0ffee5000000000000000000000000000000001"
+value = "obj:50"
+
+# ── family "ff" — almost no shared prefix with others, internal cluster ──
+[[cmds]]
+op = "insert"
+key = "ffffffffffffffffffffffffffffffffffffffff"
+value = "tip:ff"
+
+[[cmds]]
+op = "insert"
+key = "fffffffffffffffeffffffffffffffffffffffff"
+value = "tip:fe"
+
+[[cmds]]
+op = "insert"
+key = "fffffffffffffffdffffffffffffffffffffffff"
+value = "tip:fd"
+
+[[cmds]]
+op = "insert"
+key = "ff00000000000000000000000000000000000001"
+value = "tip:ff00-1"
+
+[[cmds]]
+op = "insert"
+key = "ff00000000000000000000000000000000000002"
+value = "tip:ff00-2"
+
+# ── family "01234567" stepped divergence ─────────────────────────────────
+[[cmds]]
+op = "insert"
+key = "0123456789abcdef0123456789abcdef01234567"
+value = "step:full"
+
+[[cmds]]
+op = "insert"
+key = "0123456789abcdef0123456789abcdef01234568"
+value = "step:end+1"
+
+[[cmds]]
+op = "insert"
+key = "0123456789abcdef0123456789abcdef01234577"
+value = "step:nibble"
+
+[[cmds]]
+op = "insert"
+key = "0123456789abcdef0123456789abcdef01235567"
+value = "step:mid"
+
+[[cmds]]
+op = "insert"
+key = "0123456789abcdef0123456789abcdef02234567"
+value = "step:earlier"
+
+[[cmds]]
+op = "insert"
+key = "0123456789abcdef0123456789abcdff01234567"
+value = "step:early"
+
+[[cmds]]
+op = "insert"
+key = "0123456789abcdef0123456789ab000001234567"
+value = "step:sooner"
+
+# ── lookups + stats (compression should keep nodes/edges low) ────────────
+[[cmds]]
+op = "get"
+key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+[[cmds]]
+op = "get"
+key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad"
+
+[[cmds]]
+op = "get"
+key = "deadbeefcafefeed000000000000000000000002"
+
+[[cmds]]
+op = "get"
+key = "deadbeef00000000000000000000000000000001"
+
+[[cmds]]
+op = "get"
+key = "deadbeefcafe0000000000000000000000000001"
+
+[[cmds]]
+op = "get"
+key = "c0ffee3000000000000000000000000000000001"
+
+[[cmds]]
+op = "get"
+key = "c0ffee0000000000000000000000000000000002"
+
+[[cmds]]
+op = "get"
+key = "ffffffffffffffffffffffffffffffffffffffff"
+
+[[cmds]]
+op = "get"
+key = "fffffffffffffffeffffffffffffffffffffffff"
+
+[[cmds]]
+op = "get"
+key = "ff00000000000000000000000000000000000001"
+
+[[cmds]]
+op = "get"
+key = "0123456789abcdef0123456789abcdef01234567"
+
+[[cmds]]
+op = "get"
+key = "0123456789abcdef0123456789ab000001234567"
+
+[[cmds]]
+op = "get"
+key = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+
+[[cmds]]
+op = "get"
+key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae"
+
+[[cmds]]
+op = "get"
+key = "0000000000000000000000000000000000000000"

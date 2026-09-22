@@ -1,0 +1,43 @@
+# WHAT: Nested shared prefixes — three levels of compression / branching.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "test"
+value = "1"
+
+[[cmds]]
+op = "insert"
+key = "testing"
+value = "2"
+
+[[cmds]]
+op = "insert"
+key = "tester"
+value = "3"
+
+[[cmds]]
+op = "insert"
+key = "tea"
+value = "4"
+
+[[cmds]]
+op = "get"
+key = "test"
+
+[[cmds]]
+op = "get"
+key = "testing"
+
+[[cmds]]
+op = "get"
+key = "tester"
+
+[[cmds]]
+op = "get"
+key = "tea"
+
+[[cmds]]
+op = "get"
+key = "te"

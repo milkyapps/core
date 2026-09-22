@@ -1,0 +1,30 @@
+# WHAT: Larger value blobs (round up to next power-of-two size class).
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "short"
+value = "x"
+
+[[cmds]]
+op = "insert"
+key = "medium"
+value = "0123456789abcdef0123456789abcdef"
+
+[[cmds]]
+op = "insert"
+key = "longish"
+value = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef!"
+
+[[cmds]]
+op = "get"
+key = "short"
+
+[[cmds]]
+op = "get"
+key = "medium"
+
+[[cmds]]
+op = "get"
+key = "longish"

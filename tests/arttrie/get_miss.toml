@@ -1,0 +1,20 @@
+# WHAT: Lookups on an empty trie and after a single insert (miss then hit).
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "get"
+key = "anything"
+
+[[cmds]]
+op = "insert"
+key = "only"
+value = "one"
+
+[[cmds]]
+op = "get"
+key = "other"
+
+[[cmds]]
+op = "get"
+key = "only"

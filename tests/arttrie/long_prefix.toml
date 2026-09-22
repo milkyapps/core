@@ -1,0 +1,26 @@
+# WHAT: Shared path longer than a short run — with MAX_PREFIX=64 the whole
+# common hex stem compresses into one node prefix.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "abcdefghij_left"
+value = "L"
+
+[[cmds]]
+op = "insert"
+key = "abcdefghij_right"
+value = "R"
+
+[[cmds]]
+op = "get"
+key = "abcdefghij_left"
+
+[[cmds]]
+op = "get"
+key = "abcdefghij_right"
+
+[[cmds]]
+op = "get"
+key = "abcdefghij_mid"

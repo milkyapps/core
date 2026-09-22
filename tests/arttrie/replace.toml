@@ -1,0 +1,21 @@
+# WHAT: Replacing a key updates the value blob without losing the entry.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "k"
+value = "v1"
+
+[[cmds]]
+op = "get"
+key = "k"
+
+[[cmds]]
+op = "insert"
+key = "k"
+value = "v2"
+
+[[cmds]]
+op = "get"
+key = "k"

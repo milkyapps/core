@@ -1,0 +1,144 @@
+---
+source: tests/arttrie_runner.rs
+expression: transcript
+---
+> Start
+
+trie:
+  (empty)
+
+root: None
+page_count: 1
+page_size: 65536
+dirty: []
+dirties_before_flush: 16
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+> insert key="" value="ignored"
+
+trie:
+  (empty)
+
+root: None
+page_count: 1
+page_size: 65536
+dirty: []
+dirties_before_flush: 16
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+> get key=""
+
+result: None
+stats: nodes=0 inner=0 edges=0 prefix_bytes=0 leaf_compared=false
+
+trie:
+  (empty)
+
+root: None
+page_count: 1
+page_size: 65536
+dirty: []
+dirties_before_flush: 16
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+> insert key="a" value="1"
+
+trie:
+  Leaf [p2s0] key="a" value="1"
+
+root: page=2 slot=0 size=64
+page_count: 3
+page_size: 65536
+dirty: [0, 1, 2]
+dirties_before_flush: 16
+free_lists:
+  class 3 (8B): [1]
+  class 6 (64B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+=== page 1 (data, class=3, slot_size=8, slots=8063, bitmap_bytes=1008) ===
+prev: 0  next: 0
+occupied_slots: [0, 1]
+slot[0]: 61 00 00 00 00 00 00 00  |a.......|
+slot[1]: 31 00 00 00 00 00 00 00  |1.......|
+
+=== page 2 (data, class=6, slot_size=64, slots=1021, bitmap_bytes=128) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 05 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00  |................................................................|
+
+> get key="a"
+
+result: Some("1")
+stats: nodes=1 inner=0 edges=0 prefix_bytes=0 leaf_compared=true
+
+trie:
+  Leaf [p2s0] key="a" value="1"
+
+root: page=2 slot=0 size=64
+page_count: 3
+page_size: 65536
+dirty: [0, 1, 2]
+dirties_before_flush: 16
+free_lists:
+  class 3 (8B): [1]
+  class 6 (64B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+=== page 1 (data, class=3, slot_size=8, slots=8063, bitmap_bytes=1008) ===
+prev: 0  next: 0
+occupied_slots: [0, 1]
+slot[0]: 61 00 00 00 00 00 00 00  |a.......|
+slot[1]: 31 00 00 00 00 00 00 00  |1.......|
+
+=== page 2 (data, class=6, slot_size=64, slots=1021, bitmap_bytes=128) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 05 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00  |................................................................|
+
+> get key=""
+
+result: None
+stats: nodes=0 inner=0 edges=0 prefix_bytes=0 leaf_compared=false
+
+trie:
+  Leaf [p2s0] key="a" value="1"
+
+root: page=2 slot=0 size=64
+page_count: 3
+page_size: 65536
+dirty: [0, 1, 2]
+dirties_before_flush: 16
+free_lists:
+  class 3 (8B): [1]
+  class 6 (64B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+=== page 1 (data, class=3, slot_size=8, slots=8063, bitmap_bytes=1008) ===
+prev: 0  next: 0
+occupied_slots: [0, 1]
+slot[0]: 61 00 00 00 00 00 00 00  |a.......|
+slot[1]: 31 00 00 00 00 00 00 00  |1.......|
+
+=== page 2 (data, class=6, slot_size=64, slots=1021, bitmap_bytes=128) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 05 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00  |................................................................|
