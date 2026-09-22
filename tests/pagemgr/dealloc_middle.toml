@@ -1,0 +1,28 @@
+# WHAT: After dealloc of a middle slot, the next same-class alloc reuses that
+# exact bitmap hole (not the next free index / append-only behavior).
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds]]
+op = "alloc"
+name = "x0"
+data = "slot-0!"
+
+[[cmds]]
+op = "alloc"
+name = "x1"
+data = "slot-1!"
+
+[[cmds]]
+op = "alloc"
+name = "x2"
+data = "slot-2!"
+
+[[cmds]]
+op = "dealloc"
+name = "x1"
+
+[[cmds]]
+op = "alloc"
+name = "y"
+data = "reused!"

@@ -1,0 +1,24 @@
+# WHAT: Several live allocations in one size class share a single data page
+# and occupy consecutive bitmap slots without growing the file.
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds]]
+op = "alloc"
+name = "a"
+data = "alpha"
+
+[[cmds]]
+op = "alloc"
+name = "b"
+data = "bravo"
+
+[[cmds]]
+op = "alloc"
+name = "c"
+data = "charlie"
+
+[[cmds]]
+op = "alloc"
+name = "d"
+data = "delta"

@@ -1,0 +1,21 @@
+# WHAT: Alloc → flush_all → dealloc → alloc recycles the same page/slot and
+# shows dirty-set clearing across the flush boundary.
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds]]
+op = "alloc"
+name = "a"
+data = "hello"
+
+[[cmds]]
+op = "flush"
+
+[[cmds]]
+op = "dealloc"
+name = "a"
+
+[[cmds]]
+op = "alloc"
+name = "b"
+data = "world"

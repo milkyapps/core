@@ -11,6 +11,11 @@ memmap2 = "0.9.11"
 [dev-dependencies]
 micromeasure = "0.6"
 loom = "0.7"
+libtest-mimic = "0.8"
+insta = { version = "1", features = ["yaml"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+tempfile = "3"
 
 [lints.rust]
 # `loom` is enabled via `--cfg loom` (RUSTFLAGS) for the `test-loom` recipe.
@@ -25,4 +30,9 @@ harness = false
 
 [[bench]]
 name = "hazard_ptrs"
+harness = false
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
 harness = false

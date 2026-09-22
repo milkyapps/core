@@ -1,0 +1,106 @@
+---
+source: tests/main.rs
+expression: transcript
+---
+> Start
+
+page_count: 1
+page_size: 512
+dirty: []
+dirties_before_flush: 100
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+> alloc name=x0 data="slot-0!"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 73 6c 6f 74 2d 30 21 00  |slot-0!.|
+
+> alloc name=x1 data="slot-1!"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0, 1]
+slot[0]: 73 6c 6f 74 2d 30 21 00  |slot-0!.|
+slot[1]: 73 6c 6f 74 2d 31 21 00  |slot-1!.|
+
+> alloc name=x2 data="slot-2!"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0, 1, 2]
+slot[0]: 73 6c 6f 74 2d 30 21 00  |slot-0!.|
+slot[1]: 73 6c 6f 74 2d 31 21 00  |slot-1!.|
+slot[2]: 73 6c 6f 74 2d 32 21 00  |slot-2!.|
+
+> dealloc name=x1
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0, 2]
+slot[0]: 73 6c 6f 74 2d 30 21 00  |slot-0!.|
+slot[2]: 73 6c 6f 74 2d 32 21 00  |slot-2!.|
+
+> alloc name=y data="reused!"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0, 1, 2]
+slot[0]: 73 6c 6f 74 2d 30 21 00  |slot-0!.|
+slot[1]: 72 65 75 73 65 64 21 00  |reused!.|
+slot[2]: 73 6c 6f 74 2d 32 21 00  |slot-2!.|

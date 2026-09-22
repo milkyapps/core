@@ -1,0 +1,22 @@
+# WHAT: flush_page removes only the named allocation's page from the dirty
+# set (two size classes so meta + two data pages can be dirty independently).
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds]]
+op = "alloc"
+name = "a"
+data = "page-a"
+
+[[cmds]]
+op = "alloc"
+name = "b"
+data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+
+[[cmds]]
+op = "flush_page"
+name = "a"
+
+[[cmds]]
+op = "flush_page"
+name = "b"

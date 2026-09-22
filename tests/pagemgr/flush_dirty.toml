@@ -1,0 +1,22 @@
+# WHAT: flush_dirty syncs every recorded dirty page and leaves dirty: [].
+# A following alloc dirties pages again from a clean baseline.
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds]]
+op = "alloc"
+name = "a"
+data = "one"
+
+[[cmds]]
+op = "alloc"
+name = "b"
+data = "ABCDEFGH"
+
+[[cmds]]
+op = "flush_dirty"
+
+[[cmds]]
+op = "alloc"
+name = "c"
+data = "three"

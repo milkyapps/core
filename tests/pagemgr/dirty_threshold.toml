@@ -1,0 +1,24 @@
+# WHAT: With dirties_before_flush = 2, allocs across several size classes
+# trigger automatic flushes so the dirty set stays bounded.
+page_size = 512
+dirties_before_flush = 2
+
+[[cmds]]
+op = "alloc"
+name = "a"
+data = "a"
+
+[[cmds]]
+op = "alloc"
+name = "b"
+data = "bbbbbbbb"
+
+[[cmds]]
+op = "alloc"
+name = "c"
+data = "cccccccccccccccccccccccccccccccc"
+
+[[cmds]]
+op = "alloc"
+name = "d"
+data = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"

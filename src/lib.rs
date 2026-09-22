@@ -21,4 +21,5 @@ pub(crate) mod thread;
 /// Reusable collection data structures.
 pub mod collections;
 
+/// Memory-mapped size-class page / slab manager.
 pub mod pagemgr;

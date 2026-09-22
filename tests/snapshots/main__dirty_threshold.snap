@@ -1,0 +1,119 @@
+---
+source: tests/main.rs
+expression: transcript
+---
+> Start
+
+page_count: 1
+page_size: 512
+dirty: []
+dirties_before_flush: 2
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 2
+
+> alloc name=a data="a"
+
+page_count: 2
+page_size: 512
+dirty: []
+dirties_before_flush: 2
+free_lists:
+  class 0 (1B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 2
+
+=== page 1 (data, class=0, slot_size=1, slots=433, bitmap_bytes=55) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 61  |a|
+
+> alloc name=b data="bbbbbbbb"
+
+page_count: 3
+page_size: 512
+dirty: []
+dirties_before_flush: 2
+free_lists:
+  class 0 (1B): [1]
+  class 3 (8B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 2
+
+=== page 1 (data, class=0, slot_size=1, slots=433, bitmap_bytes=55) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 61  |a|
+
+=== page 2 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 62 62 62 62 62 62 62 62  |bbbbbbbb|
+
+> alloc name=c data="cccccccccccccccccccccccccccccccc"
+
+page_count: 4
+page_size: 512
+dirty: []
+dirties_before_flush: 2
+free_lists:
+  class 0 (1B): [1]
+  class 3 (8B): [2]
+  class 5 (32B): [3]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 2
+
+=== page 1 (data, class=0, slot_size=1, slots=433, bitmap_bytes=55) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 61  |a|
+
+=== page 2 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 62 62 62 62 62 62 62 62  |bbbbbbbb|
+
+=== page 3 (data, class=5, slot_size=32, slots=15, bitmap_bytes=2) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63  |cccccccccccccccccccccccccccccccc|
+
+> alloc name=d data="dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+page_count: 5
+page_size: 512
+dirty: []
+dirties_before_flush: 2
+free_lists:
+  class 0 (1B): [1]
+  class 3 (8B): [2]
+  class 5 (32B): [3]
+  class 6 (64B): [4]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 2
+
+=== page 1 (data, class=0, slot_size=1, slots=433, bitmap_bytes=55) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 61  |a|
+
+=== page 2 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 62 62 62 62 62 62 62 62  |bbbbbbbb|
+
+=== page 3 (data, class=5, slot_size=32, slots=15, bitmap_bytes=2) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63 63  |cccccccccccccccccccccccccccccccc|
+
+=== page 4 (data, class=6, slot_size=64, slots=7, bitmap_bytes=1) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64 64  |dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|

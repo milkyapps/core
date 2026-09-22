@@ -1,0 +1,102 @@
+---
+source: tests/main.rs
+expression: transcript
+---
+> Start
+
+page_count: 1
+page_size: 512
+dirty: []
+dirties_before_flush: 100
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+> alloc name=a data="one"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 2 (4B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=2, slot_size=4, slots=118, bitmap_bytes=15) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 6f 6e 65 00  |one.|
+
+> alloc name=b data="ABCDEFGH"
+
+page_count: 3
+page_size: 512
+dirty: [0, 1, 2]
+dirties_before_flush: 100
+free_lists:
+  class 2 (4B): [1]
+  class 3 (8B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=2, slot_size=4, slots=118, bitmap_bytes=15) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 6f 6e 65 00  |one.|
+
+=== page 2 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 41 42 43 44 45 46 47 48  |ABCDEFGH|
+
+> flush_dirty
+
+page_count: 3
+page_size: 512
+dirty: []
+dirties_before_flush: 100
+free_lists:
+  class 2 (4B): [1]
+  class 3 (8B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=2, slot_size=4, slots=118, bitmap_bytes=15) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 6f 6e 65 00  |one.|
+
+=== page 2 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 41 42 43 44 45 46 47 48  |ABCDEFGH|
+
+> alloc name=c data="three"
+
+page_count: 3
+page_size: 512
+dirty: [2]
+dirties_before_flush: 100
+free_lists:
+  class 2 (4B): [1]
+  class 3 (8B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=2, slot_size=4, slots=118, bitmap_bytes=15) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 6f 6e 65 00  |one.|
+
+=== page 2 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0, 1]
+slot[0]: 41 42 43 44 45 46 47 48  |ABCDEFGH|
+slot[1]: 74 68 72 65 65 00 00 00  |three...|
