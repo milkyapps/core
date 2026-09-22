@@ -1,0 +1,50 @@
+---
+source: tests/main.rs
+expression: transcript
+---
+> Start
+
+page_count: 1
+page_size: 512
+dirty: []
+dirties_before_flush: 16
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+> alloc name=alloc1 data="123456789A"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 16
+free_lists:
+  class 4 (16B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+=== page 1 (data, class=4, slot_size=16, slots=30, bitmap_bytes=4) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 31 32 33 34 35 36 37 38 39 41 00 00 00 00 00 00  |123456789A......|
+
+> alloc name=alloc2 data="123456789A"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 16
+free_lists:
+  class 4 (16B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
+
+=== page 1 (data, class=4, slot_size=16, slots=30, bitmap_bytes=4) ===
+prev: 0  next: 0
+occupied_slots: [0, 1]
+slot[0]: 31 32 33 34 35 36 37 38 39 41 00 00 00 00 00 00  |123456789A......|
+slot[1]: 31 32 33 34 35 36 37 38 39 41 00 00 00 00 00 00  |123456789A......|

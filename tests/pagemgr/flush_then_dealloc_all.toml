@@ -1,0 +1,25 @@
+# WHAT: Alloc two size classes, flush_all, then dealloc both — occupied
+# bitmaps end empty while free_list chains stay linked to the emptied pages.
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds]]
+op = "alloc"
+name = "s"
+data = "small"
+
+[[cmds]]
+op = "alloc"
+name = "l"
+data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+
+[[cmds]]
+op = "flush"
+
+[[cmds]]
+op = "dealloc"
+name = "s"
+
+[[cmds]]
+op = "dealloc"
+name = "l"

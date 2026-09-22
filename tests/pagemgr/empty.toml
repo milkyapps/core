@@ -1,0 +1,4 @@
+# WHAT: Fresh store with no commands — locks the baseline metadata-only
+# "Start" dump (page_count=1, empty free_lists, empty dirty set).
+page_size = 512
+dirties_before_flush = 16

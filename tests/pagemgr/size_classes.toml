@@ -1,0 +1,24 @@
+# WHAT: Distinct power-of-two size classes land on different data pages and
+# appear under different free_list_by_size class heads.
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds]]
+op = "alloc"
+name = "tiny"
+data = "A"
+
+[[cmds]]
+op = "alloc"
+name = "small"
+data = "ABCDEFGH"
+
+[[cmds]]
+op = "alloc"
+name = "medium"
+data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+
+[[cmds]]
+op = "alloc"
+name = "large"
+data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuv"

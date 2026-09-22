@@ -1,0 +1,101 @@
+---
+source: tests/main.rs
+expression: transcript
+---
+> Start
+
+page_count: 1
+page_size: 512
+dirty: []
+dirties_before_flush: 100
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+> alloc name=a data="page-a"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 70 61 67 65 2d 61 00 00  |page-a..|
+
+> alloc name=b data="ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+
+page_count: 3
+page_size: 512
+dirty: [0, 1, 2]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+  class 5 (32B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 70 61 67 65 2d 61 00 00  |page-a..|
+
+=== page 2 (data, class=5, slot_size=32, slots=15, bitmap_bytes=2) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 30 31 32 33 34 35  |ABCDEFGHIJKLMNOPQRSTUVWXYZ012345|
+
+> flush_page name=a
+
+page_count: 3
+page_size: 512
+dirty: [0, 2]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+  class 5 (32B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 70 61 67 65 2d 61 00 00  |page-a..|
+
+=== page 2 (data, class=5, slot_size=32, slots=15, bitmap_bytes=2) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 30 31 32 33 34 35  |ABCDEFGHIJKLMNOPQRSTUVWXYZ012345|
+
+> flush_page name=b
+
+page_count: 3
+page_size: 512
+dirty: [0]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+  class 5 (32B): [2]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 70 61 67 65 2d 61 00 00  |page-a..|
+
+=== page 2 (data, class=5, slot_size=32, slots=15, bitmap_bytes=2) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 30 31 32 33 34 35  |ABCDEFGHIJKLMNOPQRSTUVWXYZ012345|

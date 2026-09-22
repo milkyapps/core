@@ -1,0 +1,14 @@
+# WHAT: Two same-class allocations share one data page on consecutive bitmap
+# slots (10-byte payloads round up to a 16-byte size class).
+page_size = 512
+dirties_before_flush = 16
+
+[[cmds]]
+op = "alloc"
+name = "alloc1"
+data = "123456789A"
+
+[[cmds]]
+op = "alloc"
+name = "alloc2"
+data = "123456789A"

@@ -1,0 +1,82 @@
+---
+source: tests/main.rs
+expression: transcript
+---
+> Start
+
+page_count: 1
+page_size: 512
+dirty: []
+dirties_before_flush: 100
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+> alloc name=a data="hello"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 68 65 6c 6c 6f 00 00 00  |hello...|
+
+> flush
+
+page_count: 2
+page_size: 512
+dirty: []
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 68 65 6c 6c 6f 00 00 00  |hello...|
+
+> dealloc name=a
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: []
+
+> alloc name=b data="world"
+
+page_count: 2
+page_size: 512
+dirty: [0, 1]
+dirties_before_flush: 100
+free_lists:
+  class 3 (8B): [1]
+
+=== page 0 (metadata) ===
+dirties_before_flush: 100
+
+=== page 1 (data, class=3, slot_size=8, slots=60, bitmap_bytes=8) ===
+prev: 0  next: 0
+occupied_slots: [0]
+slot[0]: 77 6f 72 6c 64 00 00 00  |world...|

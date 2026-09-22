@@ -1,0 +1,49 @@
+# WHAT: Filling every slot on a 64-byte size-class page allocates a second
+# data page, links it into that class's free list (prev/next), and keeps
+# earlier slot payloads intact.
+#
+# With variable bitmaps on page_size=512, class 64 fits 7 slots — the 8th
+# allocation grows the file.
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds]]
+op = "alloc"
+name = "s0"
+data = "0123456789abcdef0123456789abcdef!"
+
+[[cmds]]
+op = "alloc"
+name = "s1"
+data = "0123456789abcdef0123456789abcdef!"
+
+[[cmds]]
+op = "alloc"
+name = "s2"
+data = "0123456789abcdef0123456789abcdef!"
+
+[[cmds]]
+op = "alloc"
+name = "s3"
+data = "0123456789abcdef0123456789abcdef!"
+
+[[cmds]]
+op = "alloc"
+name = "s4"
+data = "0123456789abcdef0123456789abcdef!"
+
+[[cmds]]
+op = "alloc"
+name = "s5"
+data = "0123456789abcdef0123456789abcdef!"
+
+[[cmds]]
+op = "alloc"
+name = "s6"
+data = "0123456789abcdef0123456789abcdef!"
+
+# Eighth 64B slot cannot fit on page 1 → grows the file.
+[[cmds]]
+op = "alloc"
+name = "s7"
+data = "0123456789abcdef0123456789abcdef!"

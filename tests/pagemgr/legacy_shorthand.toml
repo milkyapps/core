@@ -1,0 +1,10 @@
+# WHAT: Legacy `[[cmds.<name>]]` shorthand parses as ordered alloc commands
+# (handle names "first" / "second") equivalent to op="alloc".
+page_size = 512
+dirties_before_flush = 100
+
+[[cmds.first]]
+data = "legacy-1"
+
+[[cmds.second]]
+data = "legacy-2"

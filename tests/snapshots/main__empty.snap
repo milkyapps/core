@@ -1,0 +1,15 @@
+---
+source: tests/main.rs
+expression: transcript
+---
+> Start
+
+page_count: 1
+page_size: 512
+dirty: []
+dirties_before_flush: 16
+free_lists:
+  (none)
+
+=== page 0 (metadata) ===
+dirties_before_flush: 16
