@@ -42,7 +42,7 @@
 //! array element, in file order).
 
 use libtest_mimic::{Arguments, Failed, Trial};
-use milkyapps_core::pagemgr::{PageManager, DEFAULT_PAGE_SIZE};
+use milkyapps_core::pagemgr::{DEFAULT_PAGE_SIZE, PageManager};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -86,8 +86,8 @@ fn discover_tests() -> Result<Vec<Trial>, Box<dyn std::error::Error>> {
 fn run_fixture(path: &Path) -> Result<(), Failed> {
     let text = fs::read_to_string(path)
         .map_err(|e| Failed::from(format!("read {}: {e}", path.display())))?;
-    let fixture: Fixture = parse_fixture(&text)
-        .map_err(|e| Failed::from(format!("parse {}: {e}", path.display())))?;
+    let fixture: Fixture =
+        parse_fixture(&text).map_err(|e| Failed::from(format!("parse {}: {e}", path.display())))?;
 
     let dir = tempfile::tempdir().map_err(|e| Failed::from(e.to_string()))?;
     let db_path = dir.path().join("store.db");

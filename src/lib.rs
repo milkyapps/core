@@ -23,3 +23,6 @@ pub mod collections;
 
 /// Memory-mapped size-class page / slab manager.
 pub mod pagemgr;
+
+/// Append-only write-ahead log of opaque byte blocks.
+pub mod wal;
