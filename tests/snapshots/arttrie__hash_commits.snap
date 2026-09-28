@@ -1,0 +1,3335 @@
+---
+source: tests/arttrie_runner.rs
+expression: transcript
+---
+> Start
+
+trie:
+  (empty)
+
+root: None
+
+> insert key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+
+trie:
+  Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+
+root: page=1 slot=1 size=64
+
+> insert key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+
+trie:
+  Node4 [p3s0] count=2 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    'a'/0x61 ->
+      Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+    'b'/0x62 ->
+      Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+
+root: page=3 slot=0 size=256
+
+> insert key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+
+trie:
+  Node4 [p3s0] count=3 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    'a'/0x61 ->
+      Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+    'b'/0x62 ->
+      Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+    'c'/0x63 ->
+      Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+
+root: page=3 slot=0 size=256
+
+> insert key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+
+trie:
+  Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    'a'/0x61 ->
+      Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+    'b'/0x62 ->
+      Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+    'c'/0x63 ->
+      Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+    'd'/0x64 ->
+      Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+
+root: page=3 slot=0 size=256
+
+> insert key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+
+trie:
+  Node4 [p3s1] count=2 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+
+root: page=3 slot=1 size=256
+
+> insert key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+
+trie:
+  Node4 [p3s1] count=2 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s2] count=2 prefix="eadbeef0000000000000000000000000000000"
+        '1'/0x31 ->
+          Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+        '2'/0x32 ->
+          Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+
+root: page=3 slot=1 size=256
+
+> insert key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+
+trie:
+  Node4 [p3s1] count=2 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s3] count=2 prefix="eadbeef00000000"
+        '0'/0x30 ->
+          Node4 [p3s2] count=2 prefix="0000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+            '2'/0x32 ->
+              Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+        'a'/0x61 ->
+          Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+
+root: page=3 slot=1 size=256
+
+> insert key="deadbeef11111111111111111111111111111111" value="tree:db11"
+
+trie:
+  Node4 [p3s1] count=2 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=2 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+
+root: page=3 slot=1 size=256
+
+> insert key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+
+trie:
+  Node4 [p3s1] count=2 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+
+root: page=3 slot=1 size=256
+
+> insert key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+
+trie:
+  Node4 [p3s1] count=2 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s5] count=2 prefix="afe000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+            '2'/0x32 ->
+              Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+
+root: page=3 slot=1 size=256
+
+> insert key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+
+trie:
+  Node4 [p3s1] count=2 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+
+root: page=3 slot=1 size=256
+
+> insert key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+
+trie:
+  Node4 [p3s1] count=2 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+
+root: page=3 slot=1 size=256
+
+> insert key="c0ffee0000000000000000000000000000000001" value="obj:1"
+
+trie:
+  Node4 [p3s1] count=3 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+
+root: page=3 slot=1 size=256
+
+> insert key="c0ffee0000000000000000000000000000000002" value="obj:2"
+
+trie:
+  Node4 [p3s1] count=3 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node4 [p3s8] count=2 prefix="0ffee000000000000000000000000000000000"
+        '1'/0x31 ->
+          Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+        '2'/0x32 ->
+          Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+
+root: page=3 slot=1 size=256
+
+> insert key="c0ffee1000000000000000000000000000000001" value="obj:10"
+
+trie:
+  Node4 [p3s1] count=3 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node4 [p3s9] count=2 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+
+root: page=3 slot=1 size=256
+
+> insert key="c0ffee2000000000000000000000000000000001" value="obj:20"
+
+trie:
+  Node4 [p3s1] count=3 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node4 [p3s9] count=3 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+
+root: page=3 slot=1 size=256
+
+> insert key="c0ffee3000000000000000000000000000000001" value="obj:30"
+
+trie:
+  Node4 [p3s1] count=3 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node4 [p3s9] count=4 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+
+root: page=3 slot=1 size=256
+
+> insert key="c0ffee4000000000000000000000000000000001" value="obj:40"
+
+trie:
+  Node4 [p3s1] count=3 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=5 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+
+root: page=3 slot=1 size=256
+
+> insert key="c0ffee5000000000000000000000000000000001" value="obj:50"
+
+trie:
+  Node4 [p3s1] count=3 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+
+root: page=3 slot=1 size=256
+
+> insert key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+
+trie:
+  Node4 [p3s1] count=4 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+
+root: page=3 slot=1 size=256
+
+> insert key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+
+trie:
+  Node4 [p3s1] count=4 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s9] count=2 prefix="ffffffffffffff"
+        'f'/0x66 ->
+          Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+        'e'/0x65 ->
+          Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+
+root: page=3 slot=1 size=256
+
+> insert key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+
+trie:
+  Node4 [p3s1] count=4 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s9] count=3 prefix="ffffffffffffff"
+        'f'/0x66 ->
+          Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+        'e'/0x65 ->
+          Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+        'd'/0x64 ->
+          Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+
+root: page=3 slot=1 size=256
+
+> insert key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+
+trie:
+  Node4 [p3s1] count=4 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+
+root: page=3 slot=1 size=256
+
+> insert key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+
+trie:
+  Node4 [p3s1] count=4 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+
+root: page=3 slot=1 size=256
+
+> insert key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+
+root: page=5 slot=1 size=512
+
+> insert key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s1] count=2 prefix="123456789abcdef0123456789abcdef0123456"
+        '7'/0x37 ->
+          Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+        '8'/0x38 ->
+          Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+
+root: page=5 slot=1 size=512
+
+> insert key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s12] count=2 prefix="123456789abcdef0123456789abcdef012345"
+        '6'/0x36 ->
+          Node4 [p3s1] count=2 prefix=""
+            '7'/0x37 ->
+              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+            '8'/0x38 ->
+              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+        '7'/0x37 ->
+          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+
+root: page=5 slot=1 size=512
+
+> insert key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s13] count=2 prefix="123456789abcdef0123456789abcdef0123"
+        '4'/0x34 ->
+          Node4 [p3s12] count=2 prefix="5"
+            '6'/0x36 ->
+              Node4 [p3s1] count=2 prefix=""
+                '7'/0x37 ->
+                  Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                '8'/0x38 ->
+                  Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+            '7'/0x37 ->
+              Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+        '5'/0x35 ->
+          Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+
+root: page=5 slot=1 size=512
+
+> insert key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s14] count=2 prefix="123456789abcdef0123456789abcdef0"
+        '1'/0x31 ->
+          Node4 [p3s13] count=2 prefix="23"
+            '4'/0x34 ->
+              Node4 [p3s12] count=2 prefix="5"
+                '6'/0x36 ->
+                  Node4 [p3s1] count=2 prefix=""
+                    '7'/0x37 ->
+                      Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                    '8'/0x38 ->
+                      Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                '7'/0x37 ->
+                  Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+            '5'/0x35 ->
+              Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+        '2'/0x32 ->
+          Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+
+root: page=5 slot=1 size=512
+
+> insert key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s15] count=2 prefix="123456789abcdef0123456789abcd"
+        'e'/0x65 ->
+          Node4 [p3s14] count=2 prefix="f0"
+            '1'/0x31 ->
+              Node4 [p3s13] count=2 prefix="23"
+                '4'/0x34 ->
+                  Node4 [p3s12] count=2 prefix="5"
+                    '6'/0x36 ->
+                      Node4 [p3s1] count=2 prefix=""
+                        '7'/0x37 ->
+                          Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                        '8'/0x38 ->
+                          Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                    '7'/0x37 ->
+                      Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                '5'/0x35 ->
+                  Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+            '2'/0x32 ->
+              Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+        'f'/0x66 ->
+          Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+
+root: page=5 slot=1 size=512
+
+> insert key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+result: Some("commit:root")
+stats: nodes=3 inner=2 edges=2 prefix_bytes=38 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad"
+
+result: Some("commit:aad")
+stats: nodes=3 inner=2 edges=2 prefix_bytes=38 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="deadbeefcafefeed000000000000000000000002"
+
+result: Some("blob:feed-2")
+stats: nodes=5 inner=4 edges=4 prefix_bytes=36 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="deadbeef00000000000000000000000000000001"
+
+result: Some("tree:db00-1")
+stats: nodes=5 inner=4 edges=4 prefix_bytes=36 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="deadbeefcafe0000000000000000000000000001"
+
+result: Some("blob:cafe-1")
+stats: nodes=5 inner=4 edges=4 prefix_bytes=36 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="c0ffee3000000000000000000000000000000001"
+
+result: Some("obj:30")
+stats: nodes=3 inner=2 edges=2 prefix_bytes=5 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="c0ffee0000000000000000000000000000000002"
+
+result: Some("obj:2")
+stats: nodes=4 inner=3 edges=3 prefix_bytes=37 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="ffffffffffffffffffffffffffffffffffffffff"
+
+result: Some("tip:ff")
+stats: nodes=4 inner=3 edges=3 prefix_bytes=13 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="fffffffffffffffeffffffffffffffffffffffff"
+
+result: Some("tip:fe")
+stats: nodes=4 inner=3 edges=3 prefix_bytes=13 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="ff00000000000000000000000000000000000001"
+
+result: Some("tip:ff00-1")
+stats: nodes=4 inner=3 edges=3 prefix_bytes=37 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="0123456789abcdef0123456789abcdef01234567"
+
+result: Some("step:full")
+stats: nodes=8 inner=7 edges=7 prefix_bytes=33 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="0123456789abcdef0123456789ab000001234567"
+
+result: Some("step:sooner")
+stats: nodes=3 inner=2 edges=2 prefix_bytes=27 leaf_compared=true
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+
+result: None
+stats: nodes=2 inner=2 edges=1 prefix_bytes=7 leaf_compared=false
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae"
+
+result: None
+stats: nodes=2 inner=2 edges=1 prefix_bytes=38 leaf_compared=false
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512
+
+> get key="0000000000000000000000000000000000000000"
+
+result: None
+stats: nodes=2 inner=2 edges=1 prefix_bytes=0 leaf_compared=false
+
+trie:
+  Node16 [p5s1] count=5 prefix=""
+    'a'/0x61 ->
+      Node4 [p3s0] count=4 prefix="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        'a'/0x61 ->
+          Leaf [p1s1] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" value="commit:root"
+        'b'/0x62 ->
+          Leaf [p1s3] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" value="commit:aab"
+        'c'/0x63 ->
+          Leaf [p1s5] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac" value="commit:aac"
+        'd'/0x64 ->
+          Leaf [p1s7] key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad" value="commit:aad"
+    'd'/0x64 ->
+      Node4 [p3s4] count=3 prefix="eadbeef"
+        '0'/0x30 ->
+          Node4 [p3s3] count=2 prefix="0000000"
+            '0'/0x30 ->
+              Node4 [p3s2] count=2 prefix="0000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s9] key="deadbeef00000000000000000000000000000001" value="tree:db00-1"
+                '2'/0x32 ->
+                  Leaf [p1s11] key="deadbeef00000000000000000000000000000002" value="tree:db00-2"
+            'a'/0x61 ->
+              Leaf [p1s13] key="deadbeef00000000aaaaaaaaaaaaaaaaaaaaaaaa" value="tree:db00-aa"
+        '1'/0x31 ->
+          Leaf [p1s15] key="deadbeef11111111111111111111111111111111" value="tree:db11"
+        'c'/0x63 ->
+          Node4 [p3s6] count=2 prefix="afe"
+            '0'/0x30 ->
+              Node4 [p3s5] count=2 prefix="00000000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s17] key="deadbeefcafe0000000000000000000000000001" value="blob:cafe-1"
+                '2'/0x32 ->
+                  Leaf [p1s19] key="deadbeefcafe0000000000000000000000000002" value="blob:cafe-2"
+            'f'/0x66 ->
+              Node4 [p3s7] count=2 prefix="eed00000000000000000000000"
+                '1'/0x31 ->
+                  Leaf [p1s21] key="deadbeefcafefeed000000000000000000000001" value="blob:feed-1"
+                '2'/0x32 ->
+                  Leaf [p1s23] key="deadbeefcafefeed000000000000000000000002" value="blob:feed-2"
+    'c'/0x63 ->
+      Node16 [p5s0] count=6 prefix="0ffee"
+        '0'/0x30 ->
+          Node4 [p3s8] count=2 prefix="00000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s25] key="c0ffee0000000000000000000000000000000001" value="obj:1"
+            '2'/0x32 ->
+              Leaf [p1s27] key="c0ffee0000000000000000000000000000000002" value="obj:2"
+        '1'/0x31 ->
+          Leaf [p1s29] key="c0ffee1000000000000000000000000000000001" value="obj:10"
+        '2'/0x32 ->
+          Leaf [p1s31] key="c0ffee2000000000000000000000000000000001" value="obj:20"
+        '3'/0x33 ->
+          Leaf [p1s33] key="c0ffee3000000000000000000000000000000001" value="obj:30"
+        '4'/0x34 ->
+          Leaf [p1s35] key="c0ffee4000000000000000000000000000000001" value="obj:40"
+        '5'/0x35 ->
+          Leaf [p1s37] key="c0ffee5000000000000000000000000000000001" value="obj:50"
+    'f'/0x66 ->
+      Node4 [p3s10] count=2 prefix="f"
+        'f'/0x66 ->
+          Node4 [p3s9] count=3 prefix="ffffffffffff"
+            'f'/0x66 ->
+              Leaf [p1s39] key="ffffffffffffffffffffffffffffffffffffffff" value="tip:ff"
+            'e'/0x65 ->
+              Leaf [p1s41] key="fffffffffffffffeffffffffffffffffffffffff" value="tip:fe"
+            'd'/0x64 ->
+              Leaf [p1s43] key="fffffffffffffffdffffffffffffffffffffffff" value="tip:fd"
+        '0'/0x30 ->
+          Node4 [p3s11] count=2 prefix="000000000000000000000000000000000000"
+            '1'/0x31 ->
+              Leaf [p1s45] key="ff00000000000000000000000000000000000001" value="tip:ff00-1"
+            '2'/0x32 ->
+              Leaf [p1s47] key="ff00000000000000000000000000000000000002" value="tip:ff00-2"
+    '0'/0x30 ->
+      Node4 [p3s16] count=2 prefix="123456789abcdef0123456789ab"
+        'c'/0x63 ->
+          Node4 [p3s15] count=2 prefix="d"
+            'e'/0x65 ->
+              Node4 [p3s14] count=2 prefix="f0"
+                '1'/0x31 ->
+                  Node4 [p3s13] count=2 prefix="23"
+                    '4'/0x34 ->
+                      Node4 [p3s12] count=2 prefix="5"
+                        '6'/0x36 ->
+                          Node4 [p3s1] count=2 prefix=""
+                            '7'/0x37 ->
+                              Leaf [p1s49] key="0123456789abcdef0123456789abcdef01234567" value="step:full"
+                            '8'/0x38 ->
+                              Leaf [p1s51] key="0123456789abcdef0123456789abcdef01234568" value="step:end+1"
+                        '7'/0x37 ->
+                          Leaf [p1s53] key="0123456789abcdef0123456789abcdef01234577" value="step:nibble"
+                    '5'/0x35 ->
+                      Leaf [p1s55] key="0123456789abcdef0123456789abcdef01235567" value="step:mid"
+                '2'/0x32 ->
+                  Leaf [p1s57] key="0123456789abcdef0123456789abcdef02234567" value="step:earlier"
+            'f'/0x66 ->
+              Leaf [p1s59] key="0123456789abcdef0123456789abcdff01234567" value="step:early"
+        '0'/0x30 ->
+          Leaf [p1s61] key="0123456789abcdef0123456789ab000001234567" value="step:sooner"
+
+root: page=5 slot=1 size=512

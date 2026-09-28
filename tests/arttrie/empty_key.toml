@@ -1,0 +1,25 @@
+# WHAT: Empty-string keys are ignored; trie stays empty until a real key arrives.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = ""
+value = "ignored"
+
+[[cmds]]
+op = "get"
+key = ""
+
+[[cmds]]
+op = "insert"
+key = "a"
+value = "1"
+
+[[cmds]]
+op = "get"
+key = "a"
+
+[[cmds]]
+op = "get"
+key = ""

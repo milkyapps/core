@@ -1,0 +1,3 @@
+# WHAT: Empty ART — baseline dump with no root and a single metadata page.
+page_size = 65536
+dirties_before_flush = 16

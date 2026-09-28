@@ -1,0 +1,22 @@
+# WHAT: 17 single-byte keys grow Node16 → Node48. Pages omitted (large slots).
+page_size = 65536
+dirties_before_flush = 16
+include_pages = false
+
+[[cmds]]
+op = "insert_bytes"
+from = 0
+to = 16
+value = "v"
+
+[[cmds]]
+op = "get"
+key = "\u0000"
+
+[[cmds]]
+op = "get"
+key = "\u0010"
+
+[[cmds]]
+op = "get"
+key = "\u0011"

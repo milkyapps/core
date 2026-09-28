@@ -1,0 +1,31 @@
+# WHAT: Sequenced keys under a common prefix build a shallow fan-out; mixed gets.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert_seq"
+prefix = "user:"
+from = 0
+to = 3
+value_prefix = "name-"
+
+[[cmds]]
+op = "get"
+key = "user:0"
+
+[[cmds]]
+op = "get"
+key = "user:3"
+
+[[cmds]]
+op = "get"
+key = "user:4"
+
+[[cmds]]
+op = "insert"
+key = "user:2"
+value = "renamed"
+
+[[cmds]]
+op = "get"
+key = "user:2"

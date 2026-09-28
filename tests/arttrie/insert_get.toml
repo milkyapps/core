@@ -1,0 +1,16 @@
+# WHAT: Single insert then get — root becomes a leaf; value round-trips.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "hello"
+value = "world"
+
+[[cmds]]
+op = "get"
+key = "hello"
+
+[[cmds]]
+op = "get"
+key = "missing"

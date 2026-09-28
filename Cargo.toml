@@ -36,3 +36,8 @@ harness = false
 name = "main"
 path = "tests/main.rs"
 harness = false
+
+[[test]]
+name = "arttrie"
+path = "tests/arttrie_runner.rs"
+harness = false

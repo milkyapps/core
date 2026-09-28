@@ -1,0 +1,31 @@
+# WHAT: Repeated replace of the same key; other keys stay intact.
+page_size = 65536
+dirties_before_flush = 16
+
+[[cmds]]
+op = "insert"
+key = "a"
+value = "1"
+
+[[cmds]]
+op = "insert"
+key = "b"
+value = "2"
+
+[[cmds]]
+op = "insert"
+key = "a"
+value = "10"
+
+[[cmds]]
+op = "insert"
+key = "a"
+value = "100"
+
+[[cmds]]
+op = "get"
+key = "a"
+
+[[cmds]]
+op = "get"
+key = "b"

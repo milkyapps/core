@@ -53,9 +53,25 @@ const NO_PAGE: usize = 0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PageId(usize);
 
+impl PageId {
+    /// Raw page index (`0` is the metadata page).
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
 /// Index of a slot inside a data page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SlotId(usize);
+
+impl SlotId {
+    /// Raw slot index within the page.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
 
 /// Handle returned by [`PageManager::alloc`], identifying a live object slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -67,6 +83,22 @@ pub struct AllocId {
 }
 
 impl AllocId {
+    /// Sentinel for an empty child / absent handle (`size == 0`).
+    #[must_use]
+    pub const fn invalid() -> Self {
+        Self {
+            size: 0,
+            page_id: PageId(0),
+            slot_id: SlotId(0),
+        }
+    }
+
+    /// `true` when this is a live allocation (`size != 0`).
+    #[must_use]
+    pub const fn is_valid(self) -> bool {
+        self.size != 0
+    }
+
     /// Power-of-two slot size reserved for this allocation.
     #[must_use]
     pub const fn size(&self) -> usize {
@@ -85,6 +117,34 @@ impl AllocId {
         self.slot_id
     }
 }
+
+/// Typed handle to a [`Copy`] value stored in a [`PageManager`] slot.
+pub struct TypedAlloc<T: Copy>(AllocId, std::marker::PhantomData<T>);
+
+impl<T: Copy> TypedAlloc<T> {
+    /// Allocates an uninitialized slot for `T`.
+    pub fn alloc(pages: &mut PageManager) -> Option<Self> {
+        pages.alloc::<T>().map(|id| Self(id, std::marker::PhantomData))
+    }
+
+    /// Underlying opaque allocation handle.
+    #[must_use]
+    pub const fn id(&self) -> AllocId {
+        self.0
+    }
+
+    /// Wrap an existing allocation (must have been allocated for `T`).
+    #[must_use]
+    pub const fn from_id(id: AllocId) -> Self {
+        Self(id, std::marker::PhantomData)
+    }
+
+    /// Mutable reference to the value in `pages`.
+    pub fn get_mut<'a>(&self, pages: &'a mut PageManager) -> &'a mut T {
+        pages.get_mut(self.0)
+    }
+}
+
 
 /// On-disk / in-mmap header stored at page 0.
 #[repr(C)]
@@ -351,13 +411,16 @@ impl PageManager {
         while page_id != NO_PAGE {
             if let Some(slot) = self.find_free_slot(PageId(page_id), &layout) {
                 self.mark_slot_used(PageId(page_id), &layout, slot);
-                self.mark_dirty(PageId(page_id));
-                self.maybe_flush_by_threshold();
-                return Some(AllocId {
+                let id = AllocId {
                     size: slot_size,
                     page_id: PageId(page_id),
                     slot_id: slot,
-                });
+                };
+                // Deterministic dumps + safe typed writes: never leave stale bytes.
+                self.slot_bytes_mut(id).fill(0);
+                self.mark_dirty(PageId(page_id));
+                self.maybe_flush_by_threshold();
+                return Some(id);
             }
             page_id = self.header_ref(PageId(page_id)).next;
         }
@@ -368,14 +431,16 @@ impl PageManager {
             .find_free_slot(new_page, &layout)
             .expect("fresh page must have a free slot");
         self.mark_slot_used(new_page, &layout, slot);
-        self.mark_dirty(new_page);
-        self.mark_dirty(PageId(0)); // free_list_by_size updated
-        self.maybe_flush_by_threshold();
-        Some(AllocId {
+        let id = AllocId {
             size: slot_size,
             page_id: new_page,
             slot_id: slot,
-        })
+        };
+        self.slot_bytes_mut(id).fill(0);
+        self.mark_dirty(new_page);
+        self.mark_dirty(PageId(0)); // free_list_by_size updated
+        self.maybe_flush_by_threshold();
+        Some(id)
     }
 
     /// Releases a previously allocated slot.
@@ -584,8 +649,7 @@ impl PageManager {
 
     #[cfg(test)]
     fn slots_per_page(&self, slot_size: usize) -> usize {
-        page_layout(self.page_size(), size_class(slot_size))
-            .map_or(0, |l| l.slot_count)
+        page_layout(self.page_size(), size_class(slot_size)).map_or(0, |l| l.slot_count)
     }
 
     /// Appends a new zeroed data page for `slot_size` and links it at the head
@@ -926,7 +990,8 @@ mod tests {
             ids.push(id);
         }
 
-        let pages: std::collections::BTreeSet<_> = ids.iter().map(|id| id.page_id().0).collect();
+        let pages: std::collections::BTreeSet<_> =
+            ids.iter().map(|id| id.page_id().index()).collect();
         assert!(
             pages.len() >= 2,
             "expected at least two data pages after overflowing one, got {pages:?}"
@@ -1131,7 +1196,7 @@ mod tests {
         }
 
         let mut seen = ids.clone();
-        seen.sort_by_key(|a| (a.page_id().0, a.slot_id().0));
+        seen.sort_by_key(|a| (a.page_id().index(), a.slot_id().index()));
         seen.dedup();
         assert_eq!(seen.len(), ids.len(), "duplicate AllocIds handed out");
 
