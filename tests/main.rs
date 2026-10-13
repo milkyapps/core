@@ -1,4 +1,4 @@
-//! Snapshot-driven integration tests for [`milkyapps_core::pagemgr`].
+//! Snapshot-driven integration tests for [`milkyapps_core::storage::pagemgr`].
 //!
 //! Each `tests/pagemgr/*.toml` file becomes one libtest-mimic trial. The runner
 //! opens a fresh [`PageManager`], executes every command in order, and after
@@ -42,7 +42,7 @@
 //! array element, in file order).
 
 use libtest_mimic::{Arguments, Failed, Trial};
-use milkyapps_core::pagemgr::{DEFAULT_PAGE_SIZE, PageManager};
+use milkyapps_core::storage::pagemgr::{DEFAULT_PAGE_SIZE, PageManager};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -102,7 +102,7 @@ fn run_fixture(path: &Path) -> Result<(), Failed> {
     transcript.push_str(&mgr.debug_dump());
     transcript.push('\n');
 
-    let mut handles: HashMap<String, milkyapps_core::pagemgr::AllocId> = HashMap::new();
+    let mut handles: HashMap<String, milkyapps_core::storage::pagemgr::AllocId> = HashMap::new();
 
     for (i, cmd) in fixture.cmds.iter().enumerate() {
         let label = cmd.label();
@@ -126,7 +126,7 @@ fn run_fixture(path: &Path) -> Result<(), Failed> {
 
 fn apply_cmd(
     mgr: &mut PageManager,
-    handles: &mut HashMap<String, milkyapps_core::pagemgr::AllocId>,
+    handles: &mut HashMap<String, milkyapps_core::storage::pagemgr::AllocId>,
     cmd: &Cmd,
 ) -> Result<(), String> {
     match cmd {

@@ -1,0 +1,21 @@
+seed = 1
+
+[[cmds]]
+op = "wal_append"
+payload = "durable"
+flush = "all"
+
+[[cmds]]
+op = "wal_append"
+payload = "volatile"
+flush = "none"
+
+[[cmds]]
+op = "crash"
+
+[[cmds]]
+op = "wal_reopen"
+
+[[cmds]]
+op = "wal_expect"
+records = ["durable"]

@@ -1,0 +1,29 @@
+# Documents today's crash-safety gap: put advances live page meta without a WAL
+# flush. After crash, pages may still reload the live root even though the WAL
+# lost the record. Dual-root / durable publish should make this fail closed.
+seed = 4
+page_size = 4096
+# Force page-0 meta flush on every put so the live root is in the durable image.
+dirties_before_flush = 1
+
+[[cmds]]
+op = "storage_put"
+key = "ghost"
+value = "1"
+flush = "none"
+
+[[cmds]]
+op = "storage_sync_pages"
+
+[[cmds]]
+op = "crash"
+
+[[cmds]]
+op = "storage_reopen"
+
+# Today this succeeds (unsafe). When dual-root lands, change to missing = true
+# (or expect recover/replay behavior instead of trusting live meta).
+[[cmds]]
+op = "storage_expect_get"
+key = "ghost"
+value = "1"

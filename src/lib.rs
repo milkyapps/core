@@ -21,8 +21,15 @@ pub(crate) mod thread;
 /// Reusable collection data structures.
 pub mod collections;
 
-/// Memory-mapped size-class page / slab manager.
-pub mod pagemgr;
+/// Deterministic simulation testing world ([`sim::Sim`], [`sim::SimFs`]).
+pub mod sim;
 
-/// Append-only write-ahead log of opaque byte blocks.
-pub mod wal;
+/// Durable storage layer (WAL, page manager, ART index, [`storage::Storage`]).
+pub mod storage;
+
+#[doc(inline)]
+pub use storage::pagemgr;
+#[doc(inline)]
+pub use storage::wal;
+#[doc(inline)]
+pub use sim::{Sim, SimFs, SimOp, SimRng};

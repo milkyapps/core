@@ -38,6 +38,19 @@ use std::io;
 use std::mem::{align_of, size_of};
 use std::path::Path;
 
+/// Backing store for [`PageManager`]: OS mmap or in-memory (DST).
+enum PageBacking {
+    Mmap {
+        file: File,
+        mmap: MmapMut,
+    },
+    /// Volatile working image + durable snapshot updated on flush.
+    Memory {
+        volatile: Vec<u8>,
+        durable: Vec<u8>,
+    },
+}
+
 /// Default **logical** page size written into newly created store files (4 KiB).
 ///
 /// This is a file-format slab size, not “the OS page size of the current host.”
@@ -116,6 +129,16 @@ impl AllocId {
     pub const fn slot_id(&self) -> SlotId {
         self.slot_id
     }
+
+    /// Reconstruct a handle from raw components (used when reloading metadata).
+    #[must_use]
+    pub const fn from_raw(size: usize, page: usize, slot: usize) -> Self {
+        Self {
+            size,
+            page_id: PageId(page),
+            slot_id: SlotId(slot),
+        }
+    }
 }
 
 /// Typed handle to a [`Copy`] value stored in a [`PageManager`] slot.
@@ -147,9 +170,13 @@ impl<T: Copy> TypedAlloc<T> {
 
 
 /// On-disk / in-mmap header stored at page 0.
+///
+/// Bytes after this fixed header, up to the end of logical page 0, are the
+/// **custom data** region (see [`MetadataPage::get_custom_data`] /
+/// [`MetadataPage::set_custom_data`]).
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-struct MetadataPage {
+pub struct MetadataPage {
     /// Logical page size in bytes for this file (power of two).
     ///
     /// Chosen at create time and authoritative on reopen. Independent of the
@@ -163,6 +190,59 @@ struct MetadataPage {
     free_list_by_size: [usize; 32],
     /// Flush dirty pages once `dirty.len()` reaches this threshold.
     dirties_before_flush: usize,
+}
+
+impl MetadataPage {
+    /// Byte offset of the custom-data region within page 0.
+    #[must_use]
+    pub const fn custom_data_offset() -> usize {
+        size_of::<Self>()
+    }
+
+    /// Capacity in bytes of the custom-data region for a given logical `page_size`.
+    #[must_use]
+    pub const fn custom_data_capacity(page_size: usize) -> usize {
+        page_size.saturating_sub(Self::custom_data_offset())
+    }
+
+    /// Returns the custom-data bytes stored after this header in `page0`.
+    ///
+    /// `page0` must be the full logical page 0 slice (`page_size` bytes).
+    #[must_use]
+    pub fn get_custom_data(page0: &[u8]) -> &[u8] {
+        let start = Self::custom_data_offset();
+        if page0.len() <= start {
+            &[]
+        } else {
+            &page0[start..]
+        }
+    }
+
+    /// Writes `data` into the custom-data region of `page0`, zero-filling the rest.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::ErrorKind::InvalidInput`] if `data` is larger than the
+    /// custom-data capacity of `page0`.
+    pub fn set_custom_data(page0: &mut [u8], data: &[u8]) -> io::Result<()> {
+        let start = Self::custom_data_offset();
+        if page0.len() < start {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "page0 shorter than MetadataPage header",
+            ));
+        }
+        let region = &mut page0[start..];
+        if data.len() > region.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "custom data larger than page0 capacity",
+            ));
+        }
+        region[..data.len()].copy_from_slice(data);
+        region[data.len()..].fill(0);
+        Ok(())
+    }
 }
 
 /// Fixed prefix of every data page, before the variable-length occupancy bitmap.
@@ -196,17 +276,149 @@ struct PageLayout {
 
 /// Pool of size-classed slab allocators over a single mmap'd file.
 pub struct PageManager {
-    file: File,
-    mmap: MmapMut,
-    /// Cached pointer into `mmap` at offset 0 (invalidated on remap).
+    backing: PageBacking,
+    /// Cached pointer into backing bytes at offset 0 (invalidated on grow/remap).
     meta: *mut MetadataPage,
     dirty: Vec<PageId>,
 }
 
-// `meta` aliases `mmap`; the manager is not thread-safe.
+// `meta` aliases backing bytes; the manager is not thread-safe.
 unsafe impl Send for PageManager {}
 
 impl PageManager {
+    fn bytes(&self) -> &[u8] {
+        match &self.backing {
+            PageBacking::Mmap { mmap, .. } => mmap,
+            PageBacking::Memory { volatile, .. } => volatile,
+        }
+    }
+
+    fn bytes_mut(&mut self) -> &mut [u8] {
+        match &mut self.backing {
+            PageBacking::Mmap { mmap, .. } => mmap,
+            PageBacking::Memory { volatile, .. } => volatile,
+        }
+    }
+
+    fn rebind_meta(&mut self) {
+        #[allow(clippy::cast_ptr_alignment)]
+        {
+            self.meta = self.bytes_mut().as_mut_ptr().cast::<MetadataPage>();
+        }
+    }
+
+    fn validate_page_size_args(page_size: usize, dirties_before_flush: usize) {
+        assert!(
+            page_size.is_power_of_two(),
+            "page_size must be a power of two"
+        );
+        assert!(
+            page_size >= size_of::<MetadataPage>(),
+            "page_size too small for MetadataPage"
+        );
+        assert!(
+            page_layout(page_size, size_class(8)).is_some_and(|l| l.slot_count >= 1),
+            "page_size too small for a data page with at least one 8-byte slot"
+        );
+        assert!(dirties_before_flush > 0);
+    }
+
+    /// Open an in-memory page store for DST (no OS file / mmap).
+    ///
+    /// If `durable` is empty, initializes a new store. Otherwise treats `durable`
+    /// as the crash-safe image and copies it into the volatile working set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::ErrorKind::InvalidData`] if `durable` has an invalid layout.
+    ///
+    /// # Panics
+    ///
+    /// Panics on invalid `page_size` / `dirties_before_flush` (same as
+    /// [`Self::open_with_options`]).
+    pub fn open_memory(
+        durable: &[u8],
+        page_size: usize,
+        dirties_before_flush: usize,
+    ) -> io::Result<Self> {
+        Self::validate_page_size_args(page_size, dirties_before_flush);
+        let is_new = durable.is_empty();
+        let mut volatile = if is_new {
+            vec![0u8; page_size]
+        } else {
+            durable.to_vec()
+        };
+
+        #[allow(clippy::cast_ptr_alignment)]
+        let meta = volatile.as_mut_ptr().cast::<MetadataPage>();
+
+        if is_new {
+            // SAFETY: volatile is one page; MetadataPage fits in page 0.
+            unsafe {
+                meta.write(MetadataPage {
+                    page_size,
+                    free_list_by_size: [NO_PAGE; 32],
+                    dirties_before_flush,
+                });
+            }
+            // New store: metadata is durable immediately (analogous to mmap.flush on create).
+            let durable_vec = volatile.clone();
+            Ok(Self {
+                backing: PageBacking::Memory {
+                    volatile,
+                    durable: durable_vec,
+                },
+                meta,
+                dirty: Vec::new(),
+            })
+        } else {
+            // SAFETY: buffer is large enough to contain a MetadataPage at offset 0.
+            let on_disk_page_size = unsafe { (*meta).page_size };
+            if on_disk_page_size == 0 || !on_disk_page_size.is_power_of_two() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid on-disk page_size",
+                ));
+            }
+            let len = volatile.len();
+            if len < on_disk_page_size || !len.is_multiple_of(on_disk_page_size) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "file size is not a multiple of on-disk page_size",
+                ));
+            }
+            Ok(Self {
+                backing: PageBacking::Memory {
+                    volatile,
+                    durable: durable.to_vec(),
+                },
+                meta,
+                dirty: Vec::new(),
+            })
+        }
+    }
+
+    /// Durable byte image for memory-backed stores (for [`crate::sim::Sim`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if this manager is mmap-backed.
+    #[must_use]
+    pub fn durable_image(&self) -> Vec<u8> {
+        match &self.backing {
+            PageBacking::Memory { durable, .. } => durable.clone(),
+            PageBacking::Mmap { .. } => {
+                panic!("durable_image is only available for memory-backed PageManager")
+            }
+        }
+    }
+
+    /// `true` when this manager uses the in-memory DST backend.
+    #[must_use]
+    pub const fn is_memory_backed(&self) -> bool {
+        matches!(self.backing, PageBacking::Memory { .. })
+    }
+
     /// Opens `path`, creating and initializing an empty store if needed.
     ///
     /// New files use [`DEFAULT_PAGE_SIZE`] as their logical page size. Existing
@@ -217,6 +429,28 @@ impl PageManager {
     #[must_use]
     pub fn open(path: impl AsRef<Path>) -> Option<Self> {
         Self::open_with_options(path, DEFAULT_PAGE_SIZE, 16).ok()
+    }
+
+    /// Custom-data region of page 0 (after the fixed [`MetadataPage`] header).
+    #[must_use]
+    pub fn get_custom_data(&self) -> &[u8] {
+        let page_size = self.page_size();
+        MetadataPage::get_custom_data(&self.bytes()[..page_size])
+    }
+
+    /// Overwrite page-0 custom data (zero-fills any unused trailing bytes).
+    ///
+    /// Marks page 0 dirty. Does not flush by itself.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::ErrorKind::InvalidInput`] if `data` exceeds capacity.
+    pub fn set_custom_data(&mut self, data: &[u8]) -> io::Result<()> {
+        let page_size = self.page_size();
+        MetadataPage::set_custom_data(&mut self.bytes_mut()[..page_size], data)?;
+        self.mark_dirty(PageId(0));
+        self.maybe_flush_by_threshold();
+        Ok(())
     }
 
     /// Like [`Self::open`], but returns the underlying [`io::Error`].
@@ -243,19 +477,7 @@ impl PageManager {
         page_size: usize,
         dirties_before_flush: usize,
     ) -> io::Result<Self> {
-        assert!(
-            page_size.is_power_of_two(),
-            "page_size must be a power of two"
-        );
-        assert!(
-            page_size >= size_of::<MetadataPage>(),
-            "page_size too small for MetadataPage"
-        );
-        assert!(
-            page_layout(page_size, size_class(8)).is_some_and(|l| l.slot_count >= 1),
-            "page_size too small for a data page with at least one 8-byte slot"
-        );
-        assert!(dirties_before_flush > 0);
+        Self::validate_page_size_args(page_size, dirties_before_flush);
 
         let path = path.as_ref();
         let is_new = !path.exists();
@@ -310,8 +532,7 @@ impl PageManager {
         }
 
         Ok(Self {
-            file,
-            mmap,
+            backing: PageBacking::Mmap { file, mmap },
             meta,
             dirty: Vec::new(),
         })
@@ -320,7 +541,7 @@ impl PageManager {
     /// Number of pages currently mapped (including the metadata page).
     #[must_use]
     pub fn page_count(&self) -> usize {
-        self.mmap.len() / self.page_size()
+        self.bytes().len() / self.page_size()
     }
 
     /// Logical page size in bytes for this store (from on-disk metadata).
@@ -339,7 +560,13 @@ impl PageManager {
     ///
     /// Returns an error if the OS cannot sync the mapping to disk.
     pub fn flush_all(&mut self) -> io::Result<()> {
-        self.mmap.flush()?;
+        match &mut self.backing {
+            PageBacking::Mmap { mmap, .. } => mmap.flush()?,
+            PageBacking::Memory { volatile, durable } => {
+                durable.clear();
+                durable.extend_from_slice(volatile);
+            }
+        }
         self.dirty.clear();
         Ok(())
     }
@@ -356,13 +583,22 @@ impl PageManager {
             .0
             .checked_mul(page_size)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "page offset overflow"))?;
-        if start + page_size > self.mmap.len() {
+        if start + page_size > self.bytes().len() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "page id out of range",
             ));
         }
-        self.mmap.flush_range(start, page_size)?;
+        match &mut self.backing {
+            PageBacking::Mmap { mmap, .. } => mmap.flush_range(start, page_size)?,
+            PageBacking::Memory { volatile, durable } => {
+                if durable.len() < volatile.len() {
+                    durable.resize(volatile.len(), 0);
+                }
+                durable[start..start + page_size]
+                    .copy_from_slice(&volatile[start..start + page_size]);
+            }
+        }
         self.dirty.retain(|p| *p != page);
         Ok(())
     }
@@ -500,7 +736,7 @@ impl PageManager {
         // Payload start is aligned to `aid.size` (power of two).
         #[allow(clippy::cast_ptr_alignment)]
         unsafe {
-            self.mmap.as_ptr().add(offset) as *mut T
+            self.bytes().as_ptr().add(offset) as *mut T
         }
     }
 
@@ -583,7 +819,7 @@ impl PageManager {
 
             for s in occupied {
                 let offset = pid * page_size + layout.payload_off + s * layout.slot_size;
-                let bytes = &self.mmap[offset..offset + layout.slot_size];
+                let bytes = &self.bytes()[offset..offset + layout.slot_size];
                 out.push_str(&format!("slot[{s}]: {}\n", format_slot_bytes(bytes)));
             }
         }
@@ -625,7 +861,7 @@ impl PageManager {
         let offset = self.page_byte_offset(page);
         #[allow(clippy::cast_ptr_alignment)]
         unsafe {
-            &*self.mmap.as_ptr().add(offset).cast::<DataPageHeader>()
+            &*self.bytes().as_ptr().add(offset).cast::<DataPageHeader>()
         }
     }
 
@@ -633,18 +869,18 @@ impl PageManager {
         let offset = self.page_byte_offset(page);
         #[allow(clippy::cast_ptr_alignment)]
         unsafe {
-            &mut *self.mmap.as_mut_ptr().add(offset).cast::<DataPageHeader>()
+            &mut *self.bytes_mut().as_mut_ptr().add(offset).cast::<DataPageHeader>()
         }
     }
 
     fn bitmap_ref<'a>(&'a self, page: PageId, layout: &PageLayout) -> &'a [u8] {
         let offset = self.page_byte_offset(page) + size_of::<DataPageHeader>();
-        &self.mmap[offset..offset + layout.bitmap_bytes]
+        &self.bytes()[offset..offset + layout.bitmap_bytes]
     }
 
     fn bitmap_mut<'a>(&'a mut self, page: PageId, layout: &PageLayout) -> &'a mut [u8] {
         let offset = self.page_byte_offset(page) + size_of::<DataPageHeader>();
-        &mut self.mmap[offset..offset + layout.bitmap_bytes]
+        &mut self.bytes_mut()[offset..offset + layout.bitmap_bytes]
     }
 
     #[cfg(test)]
@@ -661,22 +897,26 @@ impl PageManager {
         let new_id = self.page_count();
         let new_len = (new_id + 1).checked_mul(page_size)?;
 
-        // Grow the file, then remap so the new page is visible.
-        self.mmap.flush().ok()?;
-        self.file.set_len(new_len as u64).ok()?;
-        // Remap: previous pointers into mmap are invalid after this.
-        self.mmap = unsafe { MmapMut::map_mut(&self.file).ok()? };
-        #[allow(clippy::cast_ptr_alignment)]
-        {
-            self.meta = self.mmap.as_mut_ptr().cast::<MetadataPage>();
+        // Grow the backing store so the new page is visible.
+        match &mut self.backing {
+            PageBacking::Mmap { file, mmap } => {
+                mmap.flush().ok()?;
+                file.set_len(new_len as u64).ok()?;
+                // Remap: previous pointers into mmap are invalid after this.
+                *mmap = unsafe { MmapMut::map_mut(&*file).ok()? };
+            }
+            PageBacking::Memory { volatile, .. } => {
+                volatile.resize(new_len, 0);
+            }
         }
+        self.rebind_meta();
 
         let page = PageId(new_id);
         let old_head = self.meta_ref().free_list_by_size[class];
 
         // Zero the whole logical page (header + bitmap + slots).
         let start = new_id * page_size;
-        self.mmap[start..start + page_size].fill(0);
+        self.bytes_mut()[start..start + page_size].fill(0);
 
         {
             let hdr = self.header_mut(page);

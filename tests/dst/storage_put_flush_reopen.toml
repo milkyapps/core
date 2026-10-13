@@ -1,0 +1,23 @@
+seed = 3
+page_size = 4096
+dirties_before_flush = 64
+
+[[cmds]]
+op = "storage_put"
+key = "a"
+value = "1"
+flush = "all"
+
+[[cmds]]
+op = "storage_flush_pages"
+
+[[cmds]]
+op = "crash"
+
+[[cmds]]
+op = "storage_reopen"
+
+[[cmds]]
+op = "storage_expect_get"
+key = "a"
+value = "1"

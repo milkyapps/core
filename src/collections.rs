@@ -3,5 +3,5 @@
 /// A bounded, lock-free multi-producer multi-consumer ring buffer.
 pub mod ringbuffer;
 
-/// Adaptive radix tree (ART) over [`crate::pagemgr::PageManager`].
-pub mod arttrie;
+#[doc(inline)]
+pub use crate::storage::arttrie;

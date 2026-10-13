@@ -24,5 +24,9 @@ test-loom filter="" $LOOM_LOG="info" :
     LOOM_CHECKPOINT_INTERVAL=1000 \
     cargo test --tests -- {{filter}}
 
+# Deterministic simulation fixtures under tests/dst/*.toml
+test-sim filter="":
+    cargo test --test dst -- {{filter}}
+
 flamegraph *ARGS:
     sudo cargo flamegraph --bench hazard_ptrs {{ARGS}}

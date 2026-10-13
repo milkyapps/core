@@ -1,8 +1,9 @@
-//! Snapshot-driven integration tests for [`milkyapps_core::collections::arttrie`].
+//! Snapshot-driven integration tests for [`milkyapps_core::storage::arttrie`].
 //!
 //! Each `tests/arttrie/*.toml` file becomes one libtest-mimic trial. The runner
-//! opens a fresh [`ArtTrie`], executes every command in order, and after each
-//! step appends a visual dump to a transcript asserted with `cargo-insta`.
+//! opens a fresh [`ArtTrie`] + [`PageManager`], executes every command in order,
+//! and after each step appends a visual dump to a transcript asserted with
+//! `cargo-insta`.
 //!
 //! # TOML format
 //!
@@ -37,7 +38,8 @@
 //! ```
 
 use libtest_mimic::{Arguments, Failed, Trial};
-use milkyapps_core::collections::arttrie::ArtTrie;
+use milkyapps_core::storage::arttrie::ArtTrie;
+use milkyapps_core::storage::pagemgr::PageManager;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,22 +91,22 @@ fn run_fixture(path: &Path) -> Result<(), Failed> {
     let page_size = fixture.page_size.unwrap_or(65536);
     let dirties = fixture.dirties_before_flush.unwrap_or(16);
     let include_pages = fixture.include_pages.unwrap_or(true);
-    let mut trie = ArtTrie::open_with_options(&db_path, page_size, dirties)
+    let (mut pages, mut trie) = ArtTrie::open_with_options(&db_path, page_size, dirties)
         .map_err(|e| Failed::from(format!("open: {e}")))?;
 
     let mut transcript = String::new();
     transcript.push_str("> Start\n\n");
-    transcript.push_str(&trie.debug_dump_with_pages(include_pages));
+    transcript.push_str(&trie.debug_dump_with_pages(&pages, include_pages));
     transcript.push('\n');
 
     for (i, cmd) in fixture.cmds.iter().enumerate() {
         let label = cmd.label();
         transcript.push_str(&format!("> {label}\n\n"));
 
-        apply_cmd(&mut trie, cmd, &mut transcript)
+        apply_cmd(&mut pages, &mut trie, cmd, &mut transcript)
             .map_err(|e| Failed::from(format!("cmd {i} ({label}): {e}")))?;
 
-        transcript.push_str(&trie.debug_dump_with_pages(include_pages));
+        transcript.push_str(&trie.debug_dump_with_pages(&pages, include_pages));
         transcript.push('\n');
     }
 
@@ -116,14 +118,19 @@ fn run_fixture(path: &Path) -> Result<(), Failed> {
     Ok(())
 }
 
-fn apply_cmd(trie: &mut ArtTrie, cmd: &Cmd, transcript: &mut String) -> Result<(), String> {
+fn apply_cmd(
+    pages: &mut PageManager,
+    trie: &mut ArtTrie,
+    cmd: &Cmd,
+    transcript: &mut String,
+) -> Result<(), String> {
     match cmd {
         Cmd::Insert { key, value } => {
-            trie.insert(key.as_bytes(), value.as_bytes());
+            trie.insert(pages, key.as_bytes(), value.as_bytes());
             Ok(())
         }
         Cmd::Get { key } => {
-            let got = trie.get(key.as_bytes());
+            let got = trie.get(pages, key.as_bytes());
             let value_line = match got.value {
                 None => "result: None\n".to_string(),
                 Some(v) => format!("result: Some({:?})\n", String::from_utf8_lossy(v)),
@@ -138,7 +145,7 @@ fn apply_cmd(trie: &mut ArtTrie, cmd: &Cmd, transcript: &mut String) -> Result<(
                 return Err(format!("insert_bytes: to ({to}) < from ({from})"));
             }
             for b in *from..=*to {
-                trie.insert(&[b], value.as_bytes());
+                trie.insert(pages, &[b], value.as_bytes());
             }
             Ok(())
         }
@@ -154,7 +161,7 @@ fn apply_cmd(trie: &mut ArtTrie, cmd: &Cmd, transcript: &mut String) -> Result<(
             for i in *from..=*to {
                 let key = format!("{prefix}{i}");
                 let value = format!("{value_prefix}{i}");
-                trie.insert(key.as_bytes(), value.as_bytes());
+                trie.insert(pages, key.as_bytes(), value.as_bytes());
             }
             Ok(())
         }
